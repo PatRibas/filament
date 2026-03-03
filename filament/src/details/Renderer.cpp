@@ -26,6 +26,8 @@
 
 #include "details/Engine.h"
 #include "details/Fence.h"
+#include "details/Material.h"
+#include "details/MaterialInstance.h"
 #include "details/Scene.h"
 #include "details/SwapChain.h"
 #include "details/View.h"
@@ -967,10 +969,7 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
     variant.setDirectionalLighting(view.hasDirectionalLighting());
     variant.setDynamicLighting(view.hasDynamicLighting());
     variant.setFog(view.hasFog());
-    // The VSM bit has a different meaning for STANDARD_VARIANT (as opposed to DEPTH_VARIANT),
-    // In the STANDARD_VARIANT case, we are *using* the shadow-map, and the VSM only decides which
-    // type of sampler is used (samplerShadow or sampler2D).
-    variant.setVsm(view.hasShadowing() && view.getShadowType() != ShadowType::PCF);
+    variant.setShadowSampler2D(view.hasShadowing() && view.getShadowType() != ShadowType::PCF);
     variant.setStereo(view.hasStereo());
 
     /*
@@ -979,10 +978,7 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
 
     if (view.needsShadowMap()) {
         Variant shadowVariant(Variant::DEPTH_VARIANT);
-        // The VSM bit has a different meaning for DEPTH_VARIANT (as opposed to STANDARD_VARIANT),
-        // In the DEPTH_VARIANT case, we are *generating* the shadow-map, and some computations
-        // are handled differently. In addition, the color buffer is used.
-        shadowVariant.setVsm(view.getShadowType() == ShadowType::VSM);
+        shadowVariant.setDepthMoments(view.getShadowType() == ShadowType::VSM);
 
         auto shadows = view.renderShadowMaps(engine, fg, cameraInfo, mShaderUserTime,
                 RenderPassBuilder{ commandArena }
@@ -1062,7 +1058,8 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
             .hasScreenSpaceReflectionsOrRefractions = ssReflectionsOptions.enabled,
             .enabledStencilBuffer = view.isStencilBufferEnabled(),
             .featureLevel = mFeatureLevel,
-            .isAutoDepthResolveSupported = mIsAutoDepthResolveSupported
+            .isAutoDepthResolveSupported = mIsAutoDepthResolveSupported,
+            .fogAsPostProcess = view.hasFog() && engine.features.material.enable_fog_as_postprocess,
     };
 
     /*
@@ -1183,7 +1180,8 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
                 }
 
                 if (view.getChannelDepthClearMask().any()) {
-                    ppm.clearAncillaryBuffersPrepare(driver);
+                    Variant::type_t variant = isRenderingMultiview ? Variant::STE : 0;
+                    ppm.clearAncillaryBuffersPrepare(driver, variant);
                 }
 
                 // We use a framegraph pass to wait for froxelization to finish (so it can be done
@@ -1214,14 +1212,35 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
         passBuilder.customCommand(channel,
             RenderPass::Pass::DEPTH,
             RenderPass::CustomCommand::PROLOGUE,
-            0, [&ppm, &driver] {
-                ppm.clearAncillaryBuffers(driver, TargetBufferFlags::DEPTH);
+            0, [&ppm, &driver, &view, isRenderingMultiview] {
+                // set the per-view descriptor set (always unlit, no ssr, no fog, no vsm)
+                auto const& ds = view.getColorPassDescriptorSet(ShadowType::PCF)[
+                        ColorPassDescriptorSet::getIndex(false, false, false)];
+                ds.bind(driver, DescriptorSetBindingPoints::PER_VIEW);
+
+                Variant::type_t variant = isRenderingMultiview ? Variant::STE : 0;
+                ppm.clearAncillaryBuffers(driver, TargetBufferFlags::DEPTH, variant);
             });
     });
 
     // color-grading as subpass is done either by the color pass or the TAA pass if any
     auto colorGradingConfigForColor = colorGradingConfig;
     colorGradingConfigForColor.asSubpass = colorGradingConfigForColor.asSubpass && !taaOptions.enabled;
+
+    if (config.fogAsPostProcess) {
+        // append for command at the end of the opaque pass
+
+        passBuilder.customCommand(CONFIG_RENDERPASS_CHANNEL_COUNT - 1, // should be user defined
+                RenderPass::Pass::COLOR,
+                RenderPass::CustomCommand::EPILOGUE,
+                0, [&ppm, &driver, &view]() {
+                    // set the per-view descriptor set (always unlit, no ssr, no fog, no vsm)
+                    auto const& ds = view.getColorPassDescriptorSet(ShadowType::PCF)[
+                            ColorPassDescriptorSet::getIndex(false, false, false)];
+                    ds.bind(driver, DescriptorSetBindingPoints::PER_VIEW);
+                    ppm.fog(driver);
+                });
+    }
 
     if (colorGradingConfigForColor.asSubpass) {
         // append color grading subpass after all other passes

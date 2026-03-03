@@ -5,13 +5,12 @@ struct ShadowData {
     highp mat4 lightFromWorldMatrix;
     highp vec4 lightFromWorldZ;
     highp vec4 scissorNormalized;
-    mediump float texelSizeAtOneMeter;
     mediump float bulbRadiusLs;
     mediump float nearOverFarMinusNear;
-    mediump float normalBias;
+    highp vec2 normalBias;
     bool elvsm;
     mediump uint layer;
-    mediump uint reserved1;
+    mediump float vsmExponent;
     mediump uint reserved2;
 };
 #endif
@@ -31,7 +30,9 @@ struct PerRenderableData {
     highp int flagsChannels;                   // see packFlags() below (0x00000fll)
     highp int objectId;                        // used for picking
     highp float userData;   // TODO: We need a better solution, this currently holds the average local scale for the renderable
+#if MATERIAL_FEATURE_LEVEL > 0
     highp vec4 reserved[8];
+#endif
 };
 
 // Bits for flagsChannels

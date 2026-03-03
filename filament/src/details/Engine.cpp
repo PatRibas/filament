@@ -735,14 +735,21 @@ void FEngine::prepare(DriverApi& driver) {
     }
 
     UboManager* uboManager = mUboManager;
+    size_t const capacity = getMinCommandBufferSize();
     for (auto& materialInstanceList: mMaterialInstances) {
-        materialInstanceList.second.forEach([&driver, uboManager](FMaterialInstance const* item) {
-            // post-process materials instances must be commited explicitly because their
-            // parameters are typically not set at this point in time.
-            if (item->getMaterial()->getMaterialDomain() == MaterialDomain::SURFACE) {
-                item->commit(driver, uboManager);
-            }
-        });
+        materialInstanceList.second.forEach(
+                [this, &driver, uboManager, capacity](FMaterialInstance const* item) {
+                    // post-process materials instances must be commited explicitly because their
+                    // parameters are typically not set at this point in time.
+                    if (item->getMaterial()->getMaterialDomain() == MaterialDomain::SURFACE) {
+                        // If the remaining space is less than half the capacity, we flush right
+                        // away to allow some headroom for commands that might come later.
+                        if (UTILS_UNLIKELY(driver.getCircularBuffer().getUsed() > capacity / 2)) {
+                            flush();
+                        }
+                        item->commit(driver, uboManager);
+                    }
+                });
     }
 
     if (useUboBatching) {
@@ -791,6 +798,12 @@ void FEngine::submitFrame() {
 void FEngine::flush() {
     // flush the command buffer
     flushCommandBuffer(mCommandBufferQueue);
+    
+    // In single-threaded mode, we have to call execute() to drain the command
+    // buffer to really free up space
+    if constexpr (!UTILS_HAS_THREADING) {
+        execute();
+    }
 }
 
 void FEngine::flushAndWait() {

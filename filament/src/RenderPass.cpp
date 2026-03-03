@@ -479,7 +479,7 @@ void RenderPass::generateCommands(CommandTypeFlags commandTypeFlags, Command* co
     const size_t offsetBegin = FScene::getPrimitiveCount(soa, range.first) * commandsPerPrimitive;
     const size_t offsetEnd   = FScene::getPrimitiveCount(soa, range.last) * commandsPerPrimitive;
     Command* curr = commands + offsetBegin;
-    Command* const last = commands + offsetEnd;
+    Command const* const last = commands + offsetEnd;
 
     /*
      * The switch {} below is to coerce the compiler into generating different versions of
@@ -568,7 +568,7 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
     if constexpr (isDepthPass) {
         cmd.info.materialVariant = variant;
         cmd.info.rasterState = {};
-        cmd.info.rasterState.colorWrite = Variant::isPickingVariant(variant) || Variant::isVSMVariant(variant);
+        cmd.info.rasterState.colorWrite = Variant::isPickingVariant(variant) || Variant::isDepthMomentsVariant(variant);
         cmd.info.rasterState.depthWrite = true;
         cmd.info.rasterState.depthFunc = RasterState::DepthFunc::GE;
         cmd.info.rasterState.alphaToCoverage = false;
@@ -616,7 +616,7 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
         bool const hasSkinningOrMorphing = hasSkinning || hasMorphing;
 
         // if we are already an SSR variant, the SRE bit is already set
-        static_assert(Variant::SPECIAL_SSR & Variant::SRE);
+        static_assert(Variant::SPECIAL_SSR_VARIANT & Variant::SRE);
         Variant renderableVariant{ variant };
 
         // we can't have SSR and shadowing together by construction
@@ -798,16 +798,19 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
                 cmd.info.rasterState.culling = cullingMode;
 
                 // FIXME: should writeDepthForShadowCasters take precedence over mi->getDepthWrite()?
-                cmd.info.rasterState.depthWrite = (1 // only keep bit 0
-                        & (mi->isDepthWriteEnabled() | (mode == TransparencyMode::TWO_PASSES_ONE_SIDE)
-                                                     | isPickingVariant)
-                                                   & !(filterTranslucentObjects & translucent)
-                                                   & !(depthFilterAlphaMaskedObjects & rs.alphaToCoverage))
-                                                  | writeDepthForShadowCasters;
+                cmd.info.rasterState.depthWrite =
+                        (1 // only keep bit 0
+                                & (mi->isDepthWriteEnabled() |
+                                          (mode == TransparencyMode::TWO_PASSES_ONE_SIDE) |
+                                          isPickingVariant) &
+                                !(depthFilterAlphaMaskedObjects & rs.alphaToCoverage)) |
+                        writeDepthForShadowCasters;
 
                 *curr = cmd;
                 // cancel command if both front and back faces are culled
                 curr->key |= select(cullingMode == CullingMode::FRONT_AND_BACK);
+                // cancel command if asked to filter translucent objects
+                curr->key |= select(filterTranslucentObjects & translucent);
             }
 
             ++curr;
@@ -901,6 +904,12 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
     size_t const capacity = engine.getMinCommandBufferSize();
     CircularBuffer const& circularBuffer = driver.getCircularBuffer();
 
+    // b/479079631: Log the number of commands in this render pass.
+    size_t const commandCount = last - first;
+    if (Platform* platform = engine.getPlatform(); platform->hasDebugUpdateStatFunc()) {
+        platform->debugUpdateStat("filament.renderer.render_pass.command_count", commandCount);
+    }
+
     if (first != last) {
         FILAMENT_TRACING_VALUE(FILAMENT_TRACING_CATEGORY_FILAMENT, "commandCount", last - first);
 
@@ -969,7 +978,7 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
 
             // check we have enough capacity to write these commandCount commands, if not,
             // request a new CircularBuffer allocation of `capacity` bytes.
-            if (UTILS_UNLIKELY(circularBuffer.getUsed() > capacity - commandSizeInBytes)) {
+            if (UTILS_UNLIKELY(circularBuffer.getUsed() + commandSizeInBytes > capacity)) {
                 // FIXME: eventually we can't flush here because this will be a secondary
                 //        command buffer. We will need another solution for overflows.
                 const_cast<FEngine&>(engine).flush();

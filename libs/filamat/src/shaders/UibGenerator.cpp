@@ -100,7 +100,7 @@ BufferInterfaceBlock const& UibGenerator::getPerViewUib() noexcept  {
             { "clipFromViewMatrix",     0, Type::MAT4,   Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
             { "viewFromClipMatrix",     0, Type::MAT4,   Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
             { "eyeFromViewMatrix",      CONFIG_MAX_STEREOSCOPIC_EYES,
-                                           Type::MAT4,   Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
+                                           Type::MAT4,   Precision::HIGH },
             { "clipFromWorldMatrix",    CONFIG_MAX_STEREOSCOPIC_EYES,
                                            Type::MAT4,   Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
             { "worldFromClipMatrix",    0, Type::MAT4,   Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
@@ -175,23 +175,23 @@ BufferInterfaceBlock const& UibGenerator::getPerViewUib() noexcept  {
             // VSM shadows [variant: VSM]
             // ------------------------------------------------------------------------------------
             { "vsmExponent",             0, Type::FLOAT                  },
-            { "vsmDepthScale",           0, Type::FLOAT                  },
+            { "vsmMaxMoment",            0, Type::FLOAT, Precision::HIGH },
             { "vsmLightBleedReduction",  0, Type::FLOAT                  },
             { "shadowSamplingType",      0, Type::UINT                   },
 
             // ------------------------------------------------------------------------------------
             // Fog [variant: FOG]
             // ------------------------------------------------------------------------------------
-            { "fogDensity",              0, Type::FLOAT3,Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
+            { "fogDensity",              0, Type::FLOAT3,Precision::HIGH },
             { "fogStart",                0, Type::FLOAT, Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
-            { "fogMaxOpacity",           0, Type::FLOAT, Precision::DEFAULT, FeatureLevel::FEATURE_LEVEL_0 },
+            { "fogMaxOpacity",           0, Type::FLOAT, Precision::DEFAULT },
             { "fogMinMaxMip",            0, Type::UINT,  Precision::HIGH },
-            { "fogHeightFalloff",        0, Type::FLOAT, Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
+            { "fogHeightFalloff",        0, Type::FLOAT, Precision::HIGH },
             { "fogCutOffDistance",       0, Type::FLOAT, Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
             { "fogColor",                0, Type::FLOAT3, Precision::DEFAULT, FeatureLevel::FEATURE_LEVEL_0 },
-            { "fogColorFromIbl",         0, Type::FLOAT, Precision::DEFAULT, FeatureLevel::FEATURE_LEVEL_0 },
-            { "fogInscatteringStart",    0, Type::FLOAT, Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
-            { "fogInscatteringSize",     0, Type::FLOAT, Precision::DEFAULT, FeatureLevel::FEATURE_LEVEL_0 },
+            { "fogColorFromIbl",         0, Type::FLOAT, Precision::DEFAULT },
+            { "fogInscatteringStart",    0, Type::FLOAT, Precision::HIGH },
+            { "fogInscatteringSize",     0, Type::FLOAT, Precision::DEFAULT },
             { "fogOneOverFarMinusNear",  0, Type::FLOAT, Precision::HIGH },
             { "fogNearOverFarMinusNear", 0, Type::FLOAT, Precision::HIGH },
             { "fogFromWorldMatrix",      0, Type::MAT3, Precision::HIGH, FeatureLevel::FEATURE_LEVEL_0 },
