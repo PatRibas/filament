@@ -18,6 +18,8 @@
 
 #include "CommandStreamDispatcher.h"
 
+#include "opengl/gl_headers.h"
+
 #include <backend/DriverEnums.h>
 #include <backend/Handle.h>
 #include <backend/Platform.h>
@@ -44,8 +46,8 @@ Dispatcher NoopDriver::getDispatcher() const noexcept {
 }
 
 ShaderModel NoopDriver::getShaderModel() const noexcept {
-#if defined(__ANDROID__) || defined(FILAMENT_IOS) || \
-    defined(__EMSCRIPTEN__) || defined(FILAMENT_USES_EXTERNAL_GLES3)
+#if defined(__ANDROID__) || defined(FILAMENT_IOS) || defined(__EMSCRIPTEN__) ||                    \
+        defined(BACKEND_OPENGL_VERSION_GLES)
     return ShaderModel::MOBILE;
 #else
     return ShaderModel::DESKTOP;
