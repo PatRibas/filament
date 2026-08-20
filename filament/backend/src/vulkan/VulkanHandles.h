@@ -70,6 +70,8 @@ struct VulkanDescriptorSetLayout : public HwDescriptorSetLayout, fvkmemory::Reso
     struct Bitmask {
         fvkutils::UniformBufferBitmask ubo;         // 8 bytes
         fvkutils::UniformBufferBitmask dynamicUbo;  // 8 bytes
+        fvkutils::UniformBufferBitmask storageBuffer; // 8 bytes
+        fvkutils::SamplerBitmask storageImage;      // 8 bytes
         fvkutils::SamplerBitmask sampler;           // 8 bytes
         fvkutils::InputAttachmentBitmask inputAttachment; // 8 bytes
 
@@ -77,29 +79,35 @@ struct VulkanDescriptorSetLayout : public HwDescriptorSetLayout, fvkmemory::Reso
         fvkutils::SamplerBitmask externalSampler; // 8 bytes
 
         bool operator==(Bitmask const& right) const {
-            return ubo == right.ubo && dynamicUbo == right.dynamicUbo && sampler == right.sampler &&
+            return ubo == right.ubo && dynamicUbo == right.dynamicUbo &&
+                   storageBuffer == right.storageBuffer && storageImage == right.storageImage &&
+                   sampler == right.sampler &&
                    inputAttachment == right.inputAttachment &&
                    externalSampler == right.externalSampler;
         }
 
         static Bitmask fromLayoutDescription(DescriptorSetLayout const& layout);
     };
-    static_assert(sizeof(Bitmask) == 40);
+    static_assert(sizeof(Bitmask) == 56);
 
     // This is a convenience struct to quickly check layout compatibility in terms of descriptor set
     // pools.
     struct Count {
         uint32_t ubo = 0;
         uint32_t dynamicUbo = 0;
+        uint32_t storageBuffer = 0;
+        uint32_t storageImage = 0;
         uint32_t sampler = 0;
         uint32_t inputAttachment = 0;
 
         inline uint32_t total() const {
-            return ubo + dynamicUbo + sampler + inputAttachment;
+            return ubo + dynamicUbo + storageBuffer + storageImage + sampler + inputAttachment;
         }
 
         bool operator==(Count const& right) const noexcept {
-            return ubo == right.ubo && dynamicUbo == right.dynamicUbo && sampler == right.sampler &&
+            return ubo == right.ubo && dynamicUbo == right.dynamicUbo &&
+                   storageBuffer == right.storageBuffer && storageImage == right.storageImage &&
+                   sampler == right.sampler &&
                    inputAttachment == right.inputAttachment;
         }
 
@@ -107,6 +115,8 @@ struct VulkanDescriptorSetLayout : public HwDescriptorSetLayout, fvkmemory::Reso
             return {
                 .ubo = collapsedCount(mask.ubo),
                 .dynamicUbo = collapsedCount(mask.dynamicUbo),
+                .storageBuffer = collapsedCount(mask.storageBuffer),
+                .storageImage = collapsedCount(mask.storageImage),
                 .sampler = collapsedCount(mask.sampler),
                 .inputAttachment = collapsedCount(mask.inputAttachment),
             };
@@ -118,6 +128,8 @@ struct VulkanDescriptorSetLayout : public HwDescriptorSetLayout, fvkmemory::Reso
             Count ret;
             ret.ubo = ubo * mult;
             ret.dynamicUbo = dynamicUbo * mult;
+            ret.storageBuffer = storageBuffer * mult;
+            ret.storageImage = storageImage * mult;
             ret.sampler = sampler * mult;
             ret.inputAttachment = inputAttachment * mult;
             return ret;
@@ -187,6 +199,8 @@ public:
 
     void referencedBy(VulkanCommandBuffer& commands);
 
+    void prepareFor(VulkanCommandBuffer& commands, VkPipelineBindPoint bindPoint) const;
+
     bool isBound() const {
         return bool(mSets[mCurrentSetIndex].fenceStatus);
     }
@@ -199,6 +213,9 @@ public:
     fvkmemory::resource_ptr<VulkanDescriptorSetLayout> getLayout() const { return mLayout; }
 
     fvkutils::UniformBufferBitmask const& dynamicUboMask;
+    fvkutils::UniformBufferBitmask const& storageBufferMask;
+    fvkutils::SamplerBitmask const& storageImageMask;
+    fvkutils::SamplerBitmask const& samplerMask;
     uint8_t const uniqueDynamicUboCount;
 
     // Flag to indicate if the current layout needs to be recreated or not.
@@ -222,6 +239,8 @@ private:
     fvkmemory::resource_ptr<VulkanDescriptorSetLayout> mLayout;
     backend::DescriptorSetOffsetArray mOffsets;
     std::vector<fvkmemory::resource_ptr<fvkmemory::Resource>> mResources;
+    std::array<uint16_t, VulkanDescriptorSetLayout::MAX_BINDINGS> mTextureResources{};
+    utils::bitset64 mTextureMask;
     uint8_t mCurrentSetIndex;
     std::vector<InternalVkSet> mSets;
     fvkutils::UniformBufferBitmask mUboMask;

@@ -133,6 +133,35 @@ void VulkanPipelineCache::bindPipeline(VulkanCommandBuffer* commands) {
     }
 }
 
+VulkanPipelineCache::PipelineCacheEntry* VulkanPipelineCache::getOrCreateComputePipeline(
+        ComputePipelineKey const& key) noexcept {
+    if (ComputePipelineMap::iterator iter = mComputePipelines.find(key);
+            iter != mComputePipelines.end()) {
+        iter.value().lastUsed = mCurrentTime;
+        return &iter.value();
+    }
+
+    PipelineCacheEntry const entry = {
+        .handle = createComputePipeline(key),
+        .lastUsed = mCurrentTime,
+    };
+    assert_invariant(entry.handle != VK_NULL_HANDLE && "Compute pipeline is VK_NULL_HANDLE");
+    return &mComputePipelines.emplace(key, entry).first.value();
+}
+
+void VulkanPipelineCache::bindComputePipeline(VulkanCommandBuffer* commands,
+        resource_ptr<VulkanProgram> program, VkPipelineLayout layout) {
+    ComputePipelineKey const key = {
+        .shader = program->getComputeShader(),
+        .layout = layout,
+    };
+    PipelineCacheEntry* const entry = getOrCreateComputePipeline(key);
+    if (mBoundComputePipeline != entry->handle) {
+        mBoundComputePipeline = entry->handle;
+        vkCmdBindPipeline(commands->buffer(), VK_PIPELINE_BIND_POINT_COMPUTE, entry->handle);
+    }
+}
+
 void VulkanPipelineCache::asyncPrewarmCache(
         resource_ptr<VulkanProgram> vprogram,
         VkPipelineLayout layout,
@@ -451,6 +480,31 @@ VkPipeline VulkanPipelineCache::createPipeline(
     return pipeline;
 }
 
+VkPipeline VulkanPipelineCache::createComputePipeline(ComputePipelineKey const& key) noexcept {
+    assert_invariant(key.shader && "Compute shader is not bound.");
+    assert_invariant(key.layout && "No pipeline layout specified");
+
+    VkComputePipelineCreateInfo const createInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+            .module = key.shader,
+            .pName = "main",
+        },
+        .layout = key.layout,
+    };
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkResult const result = vkCreateComputePipelines(mDevice, mPipelineCache, 1, &createInfo,
+            VKALLOC, &pipeline);
+    if (UTILS_UNLIKELY(result != VK_SUCCESS)) {
+        FVK_LOGE << "vkCreateComputePipelines error " << result;
+        return VK_NULL_HANDLE;
+    }
+    return pipeline;
+}
+
 void VulkanPipelineCache::bindProgram(fvkmemory::resource_ptr<VulkanProgram> program) noexcept {
     mPipelineRequirements.shaders[0] = program->getVertexShader();
     mPipelineRequirements.shaders[1] = program->getFragmentShader();
@@ -508,6 +562,7 @@ void VulkanPipelineCache::addCachePrewarmCallback(CallbackHandler* handler,
 
 void VulkanPipelineCache::resetBoundPipeline() {
     mBoundPipeline = {};
+    mBoundComputePipeline = VK_NULL_HANDLE;
 }
 
 void VulkanPipelineCache::terminate() noexcept {
@@ -515,6 +570,10 @@ void VulkanPipelineCache::terminate() noexcept {
         vkDestroyPipeline(mDevice, iter.second.handle, VKALLOC);
     }
     mPipelines.clear();
+    for (auto& iter : mComputePipelines) {
+        vkDestroyPipeline(mDevice, iter.second.handle, VKALLOC);
+    }
+    mComputePipelines.clear();
     resetBoundPipeline();
 
     mCallbackManager.terminate();
@@ -548,11 +607,28 @@ void VulkanPipelineCache::gc() noexcept {
            ++iter;
        }
    }
+
+    using ConstComputePipeIterator = decltype(mComputePipelines)::const_iterator;
+    for (ConstComputePipeIterator iter = mComputePipelines.begin();
+            iter != mComputePipelines.end();) {
+        PipelineCacheEntry const& cacheEntry = iter.value();
+        if (cacheEntry.lastUsed + FVK_MAX_PIPELINE_AGE < mCurrentTime) {
+            vkDestroyPipeline(mDevice, iter->second.handle, VKALLOC);
+            iter = mComputePipelines.erase(iter);
+        } else {
+            ++iter;
+        }
+    }
 }
 
 bool VulkanPipelineCache::PipelineEqual::operator()(const PipelineKey& k1,
         const PipelineKey& k2) const {
     return 0 == memcmp((const void*) &k1, (const void*) &k2, sizeof(k1));
+}
+
+bool VulkanPipelineCache::ComputePipelineEqual::operator()(ComputePipelineKey const& lhs,
+        ComputePipelineKey const& rhs) const {
+    return lhs.shader == rhs.shader && lhs.layout == rhs.layout;
 }
 
 } // namespace filament::backend

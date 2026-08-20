@@ -310,6 +310,9 @@ constexpr std::string_view to_string(TextureType type) noexcept {
      UNIFORM_BUFFER,
      SHADER_STORAGE_BUFFER,
      INPUT_ATTACHMENT,
+     STORAGE_IMAGE_2D_FLOAT,
+     STORAGE_IMAGE_2D_INT,
+     STORAGE_IMAGE_2D_UINT,
  };
 
 constexpr bool isDepthDescriptor(DescriptorType const type) noexcept {
@@ -477,6 +480,9 @@ constexpr std::string_view to_string(DescriptorType type) noexcept {
         DESCRIPTOR_TYPE_CASE(SAMPLER_2D_MS_ARRAY_INT)
         DESCRIPTOR_TYPE_CASE(SAMPLER_2D_MS_ARRAY_UINT)
         DESCRIPTOR_TYPE_CASE(SAMPLER_EXTERNAL)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_FLOAT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_INT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_UINT)
         DESCRIPTOR_TYPE_CASE(UNIFORM_BUFFER)
         DESCRIPTOR_TYPE_CASE(SHADER_STORAGE_BUFFER)
         DESCRIPTOR_TYPE_CASE(INPUT_ATTACHMENT)
@@ -506,6 +512,11 @@ struct DescriptorSetLayoutDescriptor {
     static bool isBuffer(DescriptorType type) noexcept {
         return type == DescriptorType::UNIFORM_BUFFER ||
                type == DescriptorType::SHADER_STORAGE_BUFFER;
+    }
+    static bool isTexture(DescriptorType type) noexcept {
+        return isSampler(type) || type == DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
+                type == DescriptorType::STORAGE_IMAGE_2D_INT ||
+                type == DescriptorType::STORAGE_IMAGE_2D_UINT;
     }
     DescriptorType type;
     ShaderStageFlags stageFlags;
@@ -1151,6 +1162,7 @@ enum class TextureUsage : uint16_t {
     BLIT_DST            = 0x0080,            //!< Texture can be used the destination of a blit()
     PROTECTED           = 0x0100,            //!< Texture can be used for protected content
     GEN_MIPMAPPABLE     = 0x0200,            //!< Texture can be used with generateMipmaps()
+    STORAGE             = 0x0400,            //!< Texture can be used as a storage image
     DEFAULT             = UPLOADABLE | SAMPLEABLE,   //!< Default texture usage
     ALL_ATTACHMENTS     = COLOR_ATTACHMENT | DEPTH_ATTACHMENT | STENCIL_ATTACHMENT | SUBPASS_INPUT,   //!< Mask of all attachments
 };

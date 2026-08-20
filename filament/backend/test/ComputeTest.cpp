@@ -24,14 +24,19 @@
 
 #include <backend/Platform.h>
 
+#include <glslang/Public/ShaderLang.h>
+
 using namespace filament;
 using namespace filament::backend;
 
 int main(int argc, char* argv[]) {
-    auto backend = (Backend)test::parseArgumentsForBackend(argc, argv);
+    auto backend = static_cast<Backend>(test::parseArguments(argc, argv).backend);
     ComputeTest::init(backend);
+    glslang::InitializeProcess();
     ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    int const result = RUN_ALL_TESTS();
+    glslang::FinalizeProcess();
+    return result;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -62,6 +67,10 @@ void ComputeTest::SetUp() {
 
     driver = platform->createDriver(nullptr, {});
     commandStream = std::make_unique<CommandStream>(*driver, commandBufferQueue.getCircularBuffer());
+
+    if (getBackend() != Backend::VULKAN) {
+        GTEST_SKIP() << "Compute driver tests currently target Vulkan.";
+    }
 
     // We need at least feature level 2 to run the Compute tests
     if (driver->getFeatureLevel() < FeatureLevel::FEATURE_LEVEL_2) {

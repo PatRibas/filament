@@ -1572,6 +1572,11 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                 // TODO: support INPUT_ATTACHMENT
                 assert_invariant(false);
                 break;
+            case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_2D_INT:
+            case DescriptorType::STORAGE_IMAGE_2D_UINT:
+                // Storage images are currently implemented only by the Vulkan backend.
+                break;
         }
     }
     if (arguments.count == 0) {
@@ -1720,6 +1725,11 @@ id<MTLBuffer> MetalDescriptorSet::finalizeAndGetBuffer(MetalDriver* driver, Shad
             }
             case DescriptorType::INPUT_ATTACHMENT:
                 assert_invariant(false);
+                break;
+            case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_2D_INT:
+            case DescriptorType::STORAGE_IMAGE_2D_UINT:
+                // Storage images are currently implemented only by the Vulkan backend.
                 break;
         }
     }

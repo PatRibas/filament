@@ -213,6 +213,11 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
                 }
                 case DescriptorType::INPUT_ATTACHMENT:
                     break;
+                case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+                case DescriptorType::STORAGE_IMAGE_2D_INT:
+                case DescriptorType::STORAGE_IMAGE_2D_UINT:
+                    // Storage images are currently implemented only by the Vulkan backend.
+                    break;
             }
         }
         CHECK_GL_ERROR()
