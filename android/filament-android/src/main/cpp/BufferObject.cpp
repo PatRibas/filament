@@ -54,7 +54,11 @@ Java_com_google_android_filament_BufferObject_nBuilderBindingType(JNIEnv *env, j
         jlong nativeBuilder, jint bindingType) {
     using BindingType = BufferObject::BindingType;
     BufferObject::Builder* builder = (BufferObject::Builder *) nativeBuilder;
-    BindingType types[] = {BindingType::VERTEX};
+    BindingType types[] = {
+            BindingType::VERTEX,
+            BindingType::UNIFORM,
+            BindingType::SHADER_STORAGE,
+    };
     builder->bindingType(types[bindingType]);
 }
 

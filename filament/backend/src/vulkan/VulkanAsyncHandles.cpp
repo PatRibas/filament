@@ -45,7 +45,7 @@ inline VkShaderStageFlags getVkStage(backend::ShaderStage stage) {
         case backend::ShaderStage::FRAGMENT:
             return VK_SHADER_STAGE_FRAGMENT_BIT;
         case backend::ShaderStage::COMPUTE:
-            PANIC_POSTCONDITION("Unsupported stage");
+            return VK_SHADER_STAGE_COMPUTE_BIT;
     }
 }
 
@@ -123,10 +123,14 @@ VulkanProgram::VulkanProgram(VkDevice device, Program const& builder) noexcept
 
     static_assert(static_cast<ShaderStage>(0) == ShaderStage::VERTEX &&
             static_cast<ShaderStage>(1) == ShaderStage::FRAGMENT &&
-            MAX_SHADER_MODULES == 2);
+            static_cast<ShaderStage>(2) == ShaderStage::COMPUTE &&
+            MAX_SHADER_MODULES == Program::SHADER_TYPE_COUNT);
 
     for (size_t i = 0; i < MAX_SHADER_MODULES; i++) {
         Program::ShaderBlob const& blob = blobs[i];
+        if (blob.empty()) {
+            continue;
+        }
 
         uint32_t* data = (uint32_t*) blob.data();
         size_t dataSize = blob.size();
@@ -157,8 +161,8 @@ VulkanProgram::VulkanProgram(VkDevice device, Program const& builder) noexcept
             case ShaderStage::FRAGMENT:
                 name += "_fs";
                 break;
-            default:
-                PANIC_POSTCONDITION("Unexpected stage");
+            case ShaderStage::COMPUTE:
+                name += "_cs";
                 break;
         }
         VulkanDriver::DebugUtils::setName(VK_OBJECT_TYPE_SHADER_MODULE,

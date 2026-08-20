@@ -1,0 +1,51 @@
+material {
+    name : ComputeParticles,
+    domain : compute,
+    groupSize : [64, 1, 1],
+    parameters : [
+        {
+            type : float,
+            name : deltaTime
+        }
+    ],
+    buffers : [
+        {
+            name : Particles,
+            qualifiers : [],
+            fields : [
+                { name : positions, type : float4[10485760] },
+                { name : velocities, type : float4[10485760] },
+                { name : colors, type : float4[10485760] }
+            ]
+        }
+    ]
+}
+
+compute {
+    void compute() {
+        uint index = gl_GlobalInvocationID.x;
+
+        if (index >= 10485760u) {
+            return;
+        }
+
+        vec3 pos = particles.positions[index].xyz;
+        vec3 vel = particles.velocities[index].xyz;
+
+        float dt = materialParams.deltaTime;
+        pos += vel * dt;
+
+        const float bound = 1.5;
+        if (pos.x < -bound) { pos.x = -bound; vel.x = -vel.x; }
+        if (pos.x >  bound) { pos.x =  bound; vel.x = -vel.x; }
+        if (pos.y < -bound) { pos.y = -bound; vel.y = -vel.y; }
+        if (pos.y >  bound) { pos.y =  bound; vel.y = -vel.y; }
+        if (pos.z < -bound) { pos.z = -bound; vel.z = -vel.z; }
+        if (pos.z >  bound) { pos.z =  bound; vel.z = -vel.z; }
+
+        particles.positions[index] = vec4(pos, 1.0);
+        particles.velocities[index] = vec4(vel, 0.0);
+        particles.colors[index] = vec4(clamp(pos * 0.5 + 0.5, 0.05, 1.0), 1.0);
+    }
+}
+

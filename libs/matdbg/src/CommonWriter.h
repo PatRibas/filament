@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
+#include <filament/MaterialChunkType.h>
+#include <filament/MaterialEnums.h>
+
+#include <matdbg/JsonWriter.h>
+#include <matdbg/ShaderInfo.h>
+
 #include <filaflat/ChunkContainer.h>
 #include <filaflat/DictionaryReader.h>
 #include <filaflat/MaterialChunk.h>
 #include <filaflat/Unflattener.h>
 
-#include <filament/MaterialChunkType.h>
-#include <filament/MaterialEnums.h>
-
 #include <backend/DriverEnums.h>
-
-#include <matdbg/JsonWriter.h>
-#include <matdbg/ShaderInfo.h>
 
 #include <string>
 
@@ -302,6 +302,12 @@ const char* toString(backend::DescriptorType type) noexcept {
             return "sampler2d ms array uint";
         case backend::DescriptorType::SAMPLER_EXTERNAL:
             return "sampler external";
+        case backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+            return "storage image2d float";
+        case backend::DescriptorType::STORAGE_IMAGE_2D_INT:
+            return "storage image2d int";
+        case backend::DescriptorType::STORAGE_IMAGE_2D_UINT:
+            return "storage image2d uint";
         case backend::DescriptorType::UNIFORM_BUFFER:
             return "uniform buffer";
         case backend::DescriptorType::SHADER_STORAGE_BUFFER:

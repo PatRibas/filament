@@ -21,6 +21,8 @@ set(MATERIAL_SRCS
         materials/bakedColor.mat
         materials/bakedTexture.mat
         materials/computeTexture.mat
+        materials/computeParticles.mat
+        materials/particleRender.mat
         materials/aoPreview.mat
         materials/arrayTexture.mat
         materials/groundShadow.mat
@@ -267,6 +269,7 @@ if (NOT ANDROID)
     add_demo(animation)
     add_demo(depthtesting)
     add_demo(compute_texture)
+    add_demo(compute_particles)
     add_demo(frame_generator)
     add_demo(gltf_viewer)
     add_demo(gltf_instances)
@@ -305,7 +308,7 @@ if (NOT ANDROID)
     add_demo(vbotest)
     add_demo(viewtest)
 
-    # Sample app specific
+    target_link_libraries(compute_particles PRIVATE filameshio suzanne-resources)
     target_link_libraries(frame_generator PRIVATE imageio)
     target_link_libraries(gltf_viewer PRIVATE gltf-demo-resources uberarchive gltfio viewer)
     target_link_libraries(gltf_instances PRIVATE gltf-demo-resources uberarchive gltfio viewer)

@@ -16,6 +16,9 @@
 
 #include <jni.h>
 
+#include <stdint.h>
+
+#include <filament/BufferObject.h>
 #include <filament/MaterialInstance.h>
 #include <filament/Texture.h>
 #include <filament/TextureSampler.h>
@@ -670,4 +673,28 @@ Java_com_google_android_filament_MaterialInstance_nCompile(JNIEnv *env, jclass c
             jniCallback->getHandler(), [jniCallback](MaterialInstance*){
                 JniCallback::postToJavaAndDestroy(jniCallback);
             });
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_google_android_filament_MaterialInstance_nSetParameterStorageImage(JNIEnv* env, jclass,
+        jlong nativeMaterialInstance, jstring name_, jlong nativeTexture) {
+    MaterialInstance* instance = (MaterialInstance*) nativeMaterialInstance;
+    Texture const* texture = (Texture const*) nativeTexture;
+    char const* name = env->GetStringUTFChars(name_, nullptr);
+    wrapJni(env, [=] { instance->setParameter(name, texture); });
+    env->ReleaseStringUTFChars(name_, name);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_google_android_filament_MaterialInstance_nSetParameterStorageBuffer(JNIEnv* env, jclass,
+        jlong nativeMaterialInstance, jstring name_, jlong nativeBuffer, jint offset, jint size) {
+    MaterialInstance* instance = (MaterialInstance*) nativeMaterialInstance;
+    BufferObject const* buffer = (BufferObject const*) nativeBuffer;
+    char const* name = env->GetStringUTFChars(name_, nullptr);
+    wrapJni(env, [=] {
+        instance->setParameter(name, buffer, uint32_t(offset), uint32_t(size));
+    });
+    env->ReleaseStringUTFChars(name_, name);
 }
