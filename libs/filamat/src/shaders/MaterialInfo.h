@@ -24,8 +24,10 @@
 #include <filament/MaterialEnums.h>
 
 #include <backend/DriverEnums.h>
+#include <backend/Program.h>
 
 #include <utils/compiler.h>
+#include <utils/CString.h>
 #include <utils/FixedCapacityVector.h>
 
 namespace filamat {
@@ -72,8 +74,23 @@ struct UTILS_PUBLIC MaterialInfo {
     filament::backend::StereoscopicType stereoscopicType;
     filament::math::uint3 groupSize;
 
-    using BufferContainer = utils::FixedCapacityVector<filament::BufferInterfaceBlock const*>;
+    struct Buffer {
+        filament::BufferInterfaceBlock const* interfaceBlock;
+        filament::backend::descriptor_binding_t binding;
+    };
+    struct Image {
+        utils::CString name;
+        utils::CString format;
+        filament::backend::DescriptorType descriptorType;
+        filament::backend::descriptor_binding_t binding;
+    };
+
+    using BufferContainer = utils::FixedCapacityVector<Buffer>;
     BufferContainer buffers{ BufferContainer::with_capacity(filament::backend::MAX_SSBO_COUNT) };
+    using ImageContainer = utils::FixedCapacityVector<Image>;
+    ImageContainer images{ ImageContainer::with_capacity(4) };
+    filament::backend::DescriptorSetLayout descriptorSetLayout;
+    filament::backend::Program::DescriptorBindingsInfo descriptorBindings;
 };
 
 }

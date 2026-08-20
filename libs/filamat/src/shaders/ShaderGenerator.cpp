@@ -517,6 +517,9 @@ std::string ShaderGenerator::createSurfaceVertexProgram(ShaderModel const shader
             +PerMaterialBindingPoints::MATERIAL_PARAMS,
             material.uib);
 
+    cg.generateBuffers(vs, DescriptorSetBindingPoints::PER_MATERIAL, material.buffers,
+            ShaderStage::VERTEX);
+
     CodeGenerator::generateSeparator(vs);
 
     cg.generateCommonSamplers(vs, DescriptorSetBindingPoints::PER_MATERIAL, material.sib);
@@ -641,6 +644,9 @@ std::string ShaderGenerator::createSurfaceFragmentProgram(ShaderModel const shad
             +PerMaterialBindingPoints::MATERIAL_PARAMS,
             material.uib);
 
+    cg.generateBuffers(fs, DescriptorSetBindingPoints::PER_MATERIAL, material.buffers,
+            ShaderStage::FRAGMENT);
+
     if (!filament::Variant::isValidDepthVariant(variant)) {
         if (!mOutputs.empty()) {
             CodeGenerator::generateValueDefine(fs, "HAS_CUSTOM_OUTPUT", 1u);
@@ -739,25 +745,21 @@ std::string ShaderGenerator::createSurfaceComputeProgram(ShaderModel const shade
 
     CodeGenerator::generateSurfaceTypes(s, ShaderStage::COMPUTE);
 
-    cg.generateUniforms(s, ShaderStage::COMPUTE,
-            DescriptorSetBindingPoints::PER_VIEW,
-            +PerViewBindingPoints::FRAME_UNIFORMS,
-            UibGenerator::getPerViewUib());
+    constexpr auto COMPUTE_DESCRIPTOR_SET = static_cast<DescriptorSetBindingPoints>(0);
 
     cg.generateUniforms(s, ShaderStage::COMPUTE,
-            DescriptorSetBindingPoints::PER_MATERIAL,
+            COMPUTE_DESCRIPTOR_SET,
             +PerMaterialBindingPoints::MATERIAL_PARAMS,
             material.uib);
 
-    cg.generateCommonSamplers(s, DescriptorSetBindingPoints::PER_MATERIAL, material.sib);
+    cg.generateCommonSamplers(s, COMPUTE_DESCRIPTOR_SET, material.sib);
 
     // generate SSBO
-    cg.generateBuffers(s, material.buffers);
+    cg.generateBuffers(s, COMPUTE_DESCRIPTOR_SET, material.buffers, ShaderStage::COMPUTE);
 
-    // TODO: generate images
+    cg.generateImages(s, COMPUTE_DESCRIPTOR_SET, material.images);
 
     CodeGenerator::generateSurfaceCommon(s, ShaderStage::COMPUTE);
-    CodeGenerator::generateSurfaceGetters(s, ShaderStage::COMPUTE);
 
     appendShader(s, mMaterialFragmentCode, mMaterialLineOffset);
 

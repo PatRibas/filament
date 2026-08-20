@@ -270,6 +270,13 @@ utils::io::sstream& CodeGenerator::generateCommonProlog(utils::io::sstream& out,
         if (material.has3dSamplers) {
             out << "precision lowp sampler3D;\n";
         }
+        if (stage == ShaderStage::COMPUTE) {
+            // Image uniforms have no implicit precision in GLSL ES. Compute materials can
+            // declare all three image types, so provide a default for each of them.
+            out << "precision highp image2D;\n";
+            out << "precision highp iimage2D;\n";
+            out << "precision highp uimage2D;\n";
+        }
     }
 
     // Filament-reserved specification constants (limited by CONFIG_MAX_RESERVED_SPEC_CONSTANTS)
@@ -585,19 +592,40 @@ const char* CodeGenerator::getUniformPrecisionQualifier(UniformType type, Precis
 }
 
 utils::io::sstream& CodeGenerator::generateBuffers(utils::io::sstream& out,
-        MaterialInfo::BufferContainer const& buffers) const {
+        DescriptorSetBindingPoints const set, MaterialInfo::BufferContainer const& buffers,
+        ShaderStage const stage) const {
 
-    for (auto const* buffer : buffers) {
-
-        // FIXME: we need to get the bindings for the SSBOs and that will depend on the samplers
-        backend::descriptor_binding_t binding = 0;
+    for (auto const& buffer : buffers) {
+        backend::descriptor_binding_t binding = buffer.binding;
 
         if (mTargetApi == TargetApi::OPENGL) {
             // For OpenGL, the set is not used bug the binding must be unique.
             binding = getUniqueSsboBindingPoint();
         }
-        generateBufferInterfaceBlock(out, ShaderStage::COMPUTE,
-                DescriptorSetBindingPoints::PER_MATERIAL, binding, *buffer);
+        generateBufferInterfaceBlock(out, stage, set, binding,
+                *buffer.interfaceBlock);
+    }
+    return out;
+}
+
+utils::io::sstream& CodeGenerator::generateImages(utils::io::sstream& out,
+        DescriptorSetBindingPoints const set, MaterialInfo::ImageContainer const& images) const {
+    for (auto const& image : images) {
+        char const* type = "image2D";
+        if (image.descriptorType == backend::DescriptorType::STORAGE_IMAGE_2D_INT) {
+            type = "iimage2D";
+        } else if (image.descriptorType == backend::DescriptorType::STORAGE_IMAGE_2D_UINT) {
+            type = "uimage2D";
+        }
+
+        out << "\nlayout(";
+        if (mTargetApi == TargetApi::OPENGL) {
+            out << "binding = " << +image.binding << ", ";
+        } else {
+            out << "set = " << +set << ", binding = " << +image.binding << ", ";
+        }
+        out << image.format.c_str() << ") uniform writeonly " << type << " "
+            << image.name.c_str() << ";\n";
     }
     return out;
 }

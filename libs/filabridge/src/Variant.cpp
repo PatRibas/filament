@@ -146,6 +146,10 @@ constexpr auto get_post_process_variants() noexcept {
     return variants;
 }
 
+constexpr auto get_compute_variants() noexcept {
+    return std::array<Variant, 1>{ Variant{} };
+}
+
 // Below are compile time sanity-check tests
 constexpr inline bool reserved_is_not_valid() noexcept {
     for (size_t i = 0; i < VARIANT_COUNT; i++) {
@@ -214,6 +218,7 @@ static auto const gLitVariants{ details::get_variants<true>() };
 static auto const gUnlitVariants{ details::get_variants<false>() };
 static auto const gDepthVariants{ details::get_depth_variants() };
 static auto const gPostProcessVariants{ details::get_post_process_variants() };
+static auto const gComputeVariants{ details::get_compute_variants() };
 
 static_assert(reserved_is_not_valid());
 static_assert(reserved_variant_count() == 148);
@@ -240,6 +245,10 @@ utils::Slice<const Variant> getDepthVariants() noexcept {
 
 utils::Slice<const Variant> getPostProcessVariants() noexcept {
     return { details::gPostProcessVariants.data(), details::gPostProcessVariants.size() };
+}
+
+utils::Slice<const Variant> getComputeVariants() noexcept {
+    return { details::gComputeVariants.data(), details::gComputeVariants.size() };
 }
 
 }; // VariantUtils
