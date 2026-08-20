@@ -343,6 +343,9 @@ public:
 
     MaterialBuilder& buffer(filament::BufferInterfaceBlock bib);
 
+    //! Add a writable 2D image parameter to this compute material.
+    MaterialBuilder& image(const char* name, const char* format);
+
     //! Custom variables (all float4).
     MaterialBuilder& variable(Variable v, const char* name) noexcept;
 
@@ -816,9 +819,15 @@ public:
 
     static constexpr size_t MAX_SUBPASS_COUNT = 1;
     static constexpr size_t MAX_BUFFERS_COUNT = 4;
+    static constexpr size_t MAX_IMAGES_COUNT = 4;
     using ParameterList = std::vector<Parameter>;
     using SubpassList = Parameter[MAX_SUBPASS_COUNT];
     using BufferList = std::vector<std::unique_ptr<filament::BufferInterfaceBlock>>;
+    struct Image {
+        utils::CString name;
+        utils::CString format;
+    };
+    using ImageList = std::vector<Image>;
     using ConstantList = std::vector<Constant>;
     using PushConstantList = std::vector<PushConstant>;
 
@@ -930,6 +939,7 @@ private:
     VariableList mVariables;
     OutputList mOutputs;
     BufferList mBuffers;
+    ImageList mImages;
 
     ShaderQuality mShaderQuality = ShaderQuality::DEFAULT;
     FeatureLevel mFeatureLevel = FeatureLevel::FEATURE_LEVEL_1;

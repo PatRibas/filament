@@ -37,6 +37,7 @@
 
 #include <private/filament/BufferInterfaceBlock.h>
 #include <private/filament/ConstantInfo.h>
+#include <private/filament/DescriptorSets.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 #include <private/filament/UibStructs.h>
 #include <private/filament/Variant.h>
@@ -71,6 +72,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -359,6 +361,12 @@ MaterialBuilder& MaterialBuilder::buffer(BufferInterfaceBlock bib) {
     return *this;
 }
 
+MaterialBuilder& MaterialBuilder::image(const char* name, const char* format) {
+    FILAMENT_CHECK_POSTCONDITION(mImages.size() < MAX_IMAGES_COUNT) << "Too many storage images";
+    mImages.push_back({ CString(name), CString(format) });
+    return *this;
+}
+
 MaterialBuilder& MaterialBuilder::subpass(SubpassType subpassType, SamplerFormat format,
         ParameterPrecision precision, const char* name) {
     FILAMENT_CHECK_PRECONDITION(format == SamplerFormat::FLOAT)
@@ -640,17 +648,21 @@ bool MaterialBuilder::hasSamplerType(SamplerType const samplerType) const noexce
 }
 
 void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
+    using namespace backend;
+
     prepare(mEnableFramebufferFetch, mFeatureLevel);
 
     const bool hasEmptyVertexCode = mMaterialVertexCode.getCode().empty();
     const bool isPostProcessMaterial = mMaterialDomain == MaterialDomain::POST_PROCESS;
+    const bool isComputeMaterial = mMaterialDomain == MaterialDomain::COMPUTE;
     // TODO: Currently, for surface materials, we rely on the presence of a custom vertex shader to
     // infer the default shader stages. We could do better by analyzing the AST of the vertex shader
     // to see if the sampler is actually used.
-    const ShaderStageFlags defaultShaderStages =
-            isPostProcessMaterial || hasEmptyVertexCode
-                    ? (ShaderStageFlags::FRAGMENT)
-                    : (ShaderStageFlags::FRAGMENT | ShaderStageFlags::VERTEX);
+    const ShaderStageFlags defaultShaderStages = isComputeMaterial
+            ? ShaderStageFlags::COMPUTE
+            : (isPostProcessMaterial || hasEmptyVertexCode
+                    ? ShaderStageFlags::FRAGMENT
+                    : (ShaderStageFlags::FRAGMENT | ShaderStageFlags::VERTEX));
 
     // Build the per-material sampler block and uniform block.
     SamplerInterfaceBlock::Builder sbb;
@@ -688,7 +700,25 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
     }
 
     for (auto const& buffer : mBuffers) {
-        info.buffers.emplace_back(buffer.get());
+        info.buffers.emplace_back(MaterialInfo::Buffer{
+                .interfaceBlock = buffer.get(),
+                .binding = descriptor_binding_t(binding++),
+        });
+    }
+
+    for (auto const& image : mImages) {
+        std::string_view const format{ image.format.data(), image.format.size() };
+        DescriptorType const descriptorType = format.ends_with("ui")
+                ? DescriptorType::STORAGE_IMAGE_2D_UINT
+                : (format.ends_with("i")
+                        ? DescriptorType::STORAGE_IMAGE_2D_INT
+                        : DescriptorType::STORAGE_IMAGE_2D_FLOAT);
+        info.images.emplace_back(MaterialInfo::Image{
+                .name = image.name,
+                .format = image.format,
+                .descriptorType = descriptorType,
+                .binding = descriptor_binding_t(binding++),
+        });
     }
 
     if (mSpecularAntiAliasing) {
@@ -713,6 +743,58 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
 
     info.sib = sbb.name("MaterialParams").build();
     info.uib = ibb.name("MaterialParams").build();
+
+    info.descriptorSetLayout.descriptors =
+            FixedCapacityVector<DescriptorSetLayoutDescriptor>::with_capacity(
+                    1 + info.sib.getSize() + info.buffers.size() + info.images.size());
+    info.descriptorBindings = Program::DescriptorBindingsInfo::with_capacity(
+            info.descriptorSetLayout.descriptors.capacity());
+
+    ShaderStageFlags const uboStages = isComputeMaterial ? ShaderStageFlags::COMPUTE
+                                                          : ShaderStageFlags::VERTEX |
+                                                                  ShaderStageFlags::FRAGMENT;
+    info.descriptorSetLayout.descriptors.push_back({
+            .type = DescriptorType::UNIFORM_BUFFER,
+            .stageFlags = uboStages,
+            .binding = +PerMaterialBindingPoints::MATERIAL_PARAMS,
+            .flags = DescriptorFlags::DYNAMIC_OFFSET,
+    });
+    info.descriptorBindings.push_back({
+            descriptor_sets::getDescriptorName(DescriptorSetBindingPoints::PER_MATERIAL,
+                    +PerMaterialBindingPoints::MATERIAL_PARAMS),
+            DescriptorType::UNIFORM_BUFFER,
+            +PerMaterialBindingPoints::MATERIAL_PARAMS,
+    });
+    for (auto const& sampler : info.sib.getSamplerInfoList()) {
+        DescriptorType const descriptorType = descriptor_sets::getDescriptorType(sampler.type,
+                sampler.format);
+        info.descriptorSetLayout.descriptors.push_back({
+                .type = descriptorType,
+                .stageFlags = sampler.stages,
+                .binding = sampler.binding,
+                .flags = sampler.filterable ? DescriptorFlags::NONE : DescriptorFlags::UNFILTERABLE,
+        });
+        info.descriptorBindings.push_back({ sampler.uniformName, descriptorType, sampler.binding });
+    }
+    for (auto const& buffer : info.buffers) {
+        info.descriptorSetLayout.descriptors.push_back({
+                .type = DescriptorType::SHADER_STORAGE_BUFFER,
+                .stageFlags = isComputeMaterial
+                        ? ShaderStageFlags::COMPUTE
+                        : ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+                .binding = buffer.binding,
+        });
+        info.descriptorBindings.push_back({ CString(buffer.interfaceBlock->getName()),
+                DescriptorType::SHADER_STORAGE_BUFFER, buffer.binding });
+    }
+    for (auto const& image : info.images) {
+        info.descriptorSetLayout.descriptors.push_back({
+                .type = image.descriptorType,
+                .stageFlags = ShaderStageFlags::COMPUTE,
+                .binding = image.binding,
+        });
+        info.descriptorBindings.push_back({ image.name, image.descriptorType, image.binding });
+    }
 
     info.isLit = isLit();
     info.hasDoubleSidedCapability = mDoubleSidedCapability;
@@ -1690,8 +1772,8 @@ void MaterialBuilder::writeCommonChunks(ChunkContainer& container, MaterialInfo&
     container.push<MaterialSamplerInterfaceBlockChunk>(info.sib);
 
     // Descriptor layout and descriptor name/binding mapping
-    container.push<MaterialDescriptorBindingsChuck>(info.sib);
-    container.push<MaterialDescriptorSetLayoutChunk>(info.sib);
+    container.push<MaterialDescriptorBindingsChuck>(info.descriptorBindings);
+    container.push<MaterialDescriptorSetLayoutChunk>(info.descriptorSetLayout);
 
     // User constant parameters
     FixedCapacityVector<MaterialConstant> constantsEntry(mConstants.size());
