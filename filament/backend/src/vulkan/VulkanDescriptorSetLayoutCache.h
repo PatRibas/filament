@@ -60,7 +60,7 @@ private:
         // number of immutable samplers can be arbitrary; so we hash them into 64-bit.
         uint64_t immutableSamplerHash = 0;
     };
-    static_assert(sizeof(LayoutKey) == 48);
+    static_assert(sizeof(LayoutKey) == 64);
 
     using LayoutKeyHashFn = utils::hash::MurmurHashFn<LayoutKey>;
     struct LayoutKeyEqual {

@@ -33,6 +33,17 @@ using namespace filament::backend;
 
 namespace {
 
+DescriptorSetLayout createStorageImageLayout() {
+    DescriptorSetLayout layout;
+    layout.descriptors = utils::FixedCapacityVector<DescriptorSetLayoutDescriptor>::with_capacity(1);
+    layout.descriptors.push_back({
+        .type = DescriptorType::STORAGE_IMAGE_2D_FLOAT,
+        .stageFlags = ShaderStageFlags::COMPUTE,
+        .binding = 0,
+    });
+    return layout;
+}
+
 Program createComputeProgram(const char* shaderSource) {
     glslang::TProgram glslangProgram;
     glslang::TShader glslangShader(EShLangCompute);
@@ -71,6 +82,40 @@ void main() {}
 
     driver.dispatchCompute(program, { 1, 1, 1 });
     driver.destroyProgram(program);
+    driver.finish();
+
+    executeCommands();
+}
+
+TEST_F(ComputeTest, writesStorageImageFromCompute) {
+    auto& driver = getDriverApi();
+    constexpr uint32_t TEXTURE_SIZE = 8;
+
+    TextureHandle const texture = driver.createTexture(SamplerType::SAMPLER_2D, 1,
+            TextureFormat::RGBA8, 1, TEXTURE_SIZE, TEXTURE_SIZE, 1,
+            TextureUsage::STORAGE | TextureUsage::SAMPLEABLE);
+    DescriptorSetLayoutHandle const layout = driver.createDescriptorSetLayout(
+            createStorageImageLayout());
+    DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
+    driver.updateDescriptorSetTexture(descriptorSet, 0, texture, {});
+    driver.bindDescriptorSet(descriptorSet, 0, {});
+
+    Program program = createComputeProgram(R"(
+#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outputImage;
+void main() {
+    imageStore(outputImage, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 0.0, 0.0, 1.0));
+}
+)");
+    program.descriptorLayout(0, createStorageImageLayout());
+    ProgramHandle const computeProgram = driver.createProgram(std::move(program));
+
+    driver.dispatchCompute(computeProgram, { 1, 1, 1 });
+    driver.destroyProgram(computeProgram);
+    driver.destroyDescriptorSet(descriptorSet);
+    driver.destroyDescriptorSetLayout(layout);
+    driver.destroyTexture(texture);
     driver.finish();
 
     executeCommands();

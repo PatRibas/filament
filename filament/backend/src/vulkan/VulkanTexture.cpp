@@ -118,6 +118,9 @@ VkComponentMapping composeSwizzle(VkComponentMapping const& prev, VkComponentMap
 }
 
 inline VulkanLayout getDefaultLayoutImpl(TextureUsage usage) {
+    if (any(usage & TextureUsage::STORAGE)) {
+        return VulkanLayout::COMPUTE_IMAGE;
+    }
     if (any(usage & TextureUsage::DEPTH_ATTACHMENT)) {
         if (any(usage & TextureUsage::SAMPLEABLE)) {
             return VulkanLayout::DEPTH_SAMPLER;
@@ -145,6 +148,9 @@ inline VulkanLayout getDefaultLayoutImpl(VkImageUsageFlags vkusage) {
     }
     if (vkusage & VK_IMAGE_USAGE_SAMPLED_BIT) {
         usage = usage | TextureUsage::SAMPLEABLE;
+    }
+    if (vkusage & VK_IMAGE_USAGE_STORAGE_BIT) {
+        usage = usage | TextureUsage::STORAGE;
     }
     return getDefaultLayoutImpl(usage);
 }
@@ -208,6 +214,9 @@ VkImageUsageFlags getUsage(VulkanContext const& context, uint8_t samples,
 #endif
 
         usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+    if (any(tusage & TextureUsage::STORAGE)) {
+        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
     if (any(tusage & TextureUsage::COLOR_ATTACHMENT)) {
         usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | transientFlag;

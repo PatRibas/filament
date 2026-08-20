@@ -20,6 +20,7 @@ set(MATERIAL_SRCS
         materials/aiDefaultMat.mat
         materials/bakedColor.mat
         materials/bakedTexture.mat
+        materials/computeTexture.mat
         materials/aoPreview.mat
         materials/arrayTexture.mat
         materials/groundShadow.mat
@@ -265,6 +266,7 @@ endfunction()
 if (NOT ANDROID)
     add_demo(animation)
     add_demo(depthtesting)
+    add_demo(compute_texture)
     add_demo(frame_generator)
     add_demo(gltf_viewer)
     add_demo(gltf_instances)

@@ -40,6 +40,11 @@ DescriptorSetLayout::DescriptorSetLayout(
         mMaxDescriptorBinding = std::max(mMaxDescriptorBinding, desc.binding);
         mSamplers.set(desc.binding, backend::DescriptorSetLayoutDescriptor::isSampler(desc.type));
         mUniformBuffers.set(desc.binding, desc.type == backend::DescriptorType::UNIFORM_BUFFER);
+        mStorageBuffers.set(desc.binding,
+                desc.type == backend::DescriptorType::SHADER_STORAGE_BUFFER);
+        mStorageImages.set(desc.binding,
+                backend::DescriptorSetLayoutDescriptor::isTexture(desc.type) &&
+                        !backend::DescriptorSetLayoutDescriptor::isSampler(desc.type));
     }
 
     assert_invariant(mMaxDescriptorBinding < utils::bitset64::BIT_COUNT);

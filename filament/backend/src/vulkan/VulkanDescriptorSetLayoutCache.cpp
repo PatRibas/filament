@@ -53,7 +53,7 @@ uint32_t appendBindings(VkDescriptorSetLayoutBinding* toBind, VkDescriptorType t
                 .binding = binding,
                 .descriptorType = type,
                 .descriptorCount = 1,
-                .stageFlags = stages,
+                .stageFlags = VK_SHADER_STAGE_ALL,
             };
         }
     });
@@ -90,7 +90,7 @@ uint32_t appendSamplerBindings(VkDescriptorSetLayoutBinding* toBind,
                 .binding = binding,
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .descriptorCount = 1,
-                .stageFlags = stages,
+                .stageFlags = VK_SHADER_STAGE_ALL,
                 .pImmutableSamplers = external[index] && immutableSamplerCount > immutableIndex
                                               ? &(immutableSamplers[immutableIndex++].second)
                                               : nullptr,
@@ -142,6 +142,10 @@ VkDescriptorSetLayout VulkanDescriptorSetLayoutCache::getVkLayout(
     count += appendBindings(&toBind[count], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
             bitmasks.dynamicUbo);
     count += appendBindings(&toBind[count], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, bitmasks.ubo);
+    count += appendBindings(&toBind[count], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            bitmasks.storageBuffer);
+    count += appendBindings(&toBind[count], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            bitmasks.storageImage);
     count += appendSamplerBindings(&toBind[count], bitmasks.sampler, externalSamplers,
             immutableSamplers);
     count += appendBindings(&toBind[count], VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,

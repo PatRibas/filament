@@ -155,6 +155,11 @@ WebGPUDescriptorSetLayout::WebGPUDescriptorSetLayout(DescriptorSetLayout const& 
                 PANIC_POSTCONDITION("External Sampler is not supported");
                 break;
             }
+            case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_2D_INT:
+            case DescriptorType::STORAGE_IMAGE_2D_UINT:
+                PANIC_POSTCONDITION("Storage images are not supported");
+                break;
         }
         if (isDepthDescriptor(fEntry.type)) {
             wEntry.texture.sampleType = wgpu::TextureSampleType::Depth;
