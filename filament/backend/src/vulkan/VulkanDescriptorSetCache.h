@@ -60,6 +60,9 @@ public:
             fvkmemory::resource_ptr<VulkanTexture> texture, VkSampler sampler,
             VkDescriptorSetLayout externalSamplerLayout = VK_NULL_HANDLE) noexcept;
 
+    void updateStorageImage(fvkmemory::resource_ptr<VulkanDescriptorSet> set, uint8_t binding,
+            fvkmemory::resource_ptr<VulkanTexture> texture) noexcept;
+
     void updateSamplerForExternalSamplerSet(fvkmemory::resource_ptr<VulkanDescriptorSet> set, uint8_t binding,
             fvkmemory::resource_ptr<VulkanTexture> texture) noexcept;
 
@@ -73,7 +76,7 @@ public:
     void unbind(uint8_t setIndex);
 
     void commit(VulkanCommandBuffer* commands, VkPipelineLayout pipelineLayout,
-            fvkutils::DescriptorSetMask const& setMask);
+            fvkutils::DescriptorSetMask const& setMask, VkPipelineBindPoint bindPoint);
 
     fvkmemory::resource_ptr<VulkanDescriptorSet> createSet(Handle<HwDescriptorSet> handle,
             fvkmemory::resource_ptr<VulkanDescriptorSetLayout> layout);
@@ -110,6 +113,7 @@ private:
 
     struct {
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+        VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         fvkutils::DescriptorSetMask setMask;
         DescriptorSetArray boundSets = {};
     } mLastBoundInfo;

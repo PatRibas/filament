@@ -120,6 +120,10 @@ public:
     // Creates a new pipeline if necessary and binds it using vkCmdBindPipeline.
     void bindPipeline(VulkanCommandBuffer* commands);
 
+    // Creates a new compute pipeline if necessary and binds it using vkCmdBindPipeline.
+    void bindComputePipeline(VulkanCommandBuffer* commands,
+            fvkmemory::resource_ptr<VulkanProgram> program, VkPipelineLayout layout);
+
     // Each of the following methods are fast and do not make Vulkan calls.
     void bindLayout(VkPipelineLayout layout) noexcept;
     void bindProgram(fvkmemory::resource_ptr<VulkanProgram> program) noexcept;
@@ -231,12 +235,31 @@ private:
         Timestamp lastUsed;
     };
 
+    struct ComputePipelineKey {
+        VkShaderModule shader;
+        VkPipelineLayout layout;
+    };
+
+    static_assert(std::is_trivially_copyable<ComputePipelineKey>::value,
+            "ComputePipelineKey must be a POD for fast hashing.");
+
+    using ComputePipelineHashFn = utils::hash::MurmurHashFn<ComputePipelineKey>;
+
+    struct ComputePipelineEqual {
+        bool operator()(ComputePipelineKey const& lhs, ComputePipelineKey const& rhs) const;
+    };
+
     using PipelineMap = tsl::robin_map<PipelineKey, PipelineCacheEntry,
             PipelineHashFn, PipelineEqual>;
 
+    using ComputePipelineMap = tsl::robin_map<ComputePipelineKey, PipelineCacheEntry,
+            ComputePipelineHashFn, ComputePipelineEqual>;
+
     PipelineCacheEntry* getOrCreatePipeline() noexcept;
+    PipelineCacheEntry* getOrCreateComputePipeline(ComputePipelineKey const& key) noexcept;
 
     PipelineMap mPipelines;
+    ComputePipelineMap mComputePipelines;
 
     // Creates a pipeline, with all optional dynamic pipeline states diabled.
     // Note - because PipelineDynamicOptions is defined within VulkanPipelineCache,
@@ -247,6 +270,7 @@ private:
 
     // These helpers all return unstable pointers that should not be stored.
     VkPipeline createPipeline(const PipelineKey& key, const PipelineDynamicOptions& dynamicOptions) noexcept;
+    VkPipeline createComputePipeline(ComputePipelineKey const& key) noexcept;
 
     // Immutable state.
     VkDevice mDevice = VK_NULL_HANDLE;
@@ -260,6 +284,7 @@ private:
 
     // Current bindings for the pipeline and descriptor sets.
     PipelineKey mBoundPipeline = {};
+    VkPipeline mBoundComputePipeline = VK_NULL_HANDLE;
 
     // Thread pool that allows us to "prewarm" the pipeline cache, reducing draw-time
     // pipeline compilation time.

@@ -633,6 +633,16 @@ void VulkanDriver::updateDescriptorSetTexture(
         // with an external sampler.
         mAppState.hasBoundExternalImages = true;
     } else {
+        if (set->storageImageMask.test(binding)) {
+            texture->transitionLayout(&mCommands.get(), texture->getPrimaryViewRange(),
+                    VulkanLayout::COMPUTE_IMAGE);
+            mDescriptorSetCache.updateStorageImage(set, binding, texture);
+            return;
+        }
+        if (any(texture->usage & TextureUsage::STORAGE)) {
+            texture->transitionLayout(&mCommands.get(), texture->getPrimaryViewRange(),
+                    texture->getSamplerLayout());
+        }
         VulkanSamplerCache::Params cacheParams = {
             .sampler = params,
         };
@@ -2978,6 +2988,12 @@ void VulkanDriver::bindDescriptorSet(
             mExternalImageManager.updateSetAndLayout(set);
             set->isLayoutDirty = false;
         }
+        // Material descriptor sets are bound before a render pass starts. Transition their images
+        // here so layout changes never occur from inside prepareDraw/render passes.
+        VkPipelineBindPoint const bindPoint = set->storageImageMask.any()
+                ? VK_PIPELINE_BIND_POINT_COMPUTE
+                : VK_PIPELINE_BIND_POINT_GRAPHICS;
+        set->prepareFor(mCommands.get(), bindPoint);
         mDescriptorSetCache.bind(setIndex, set, std::move(offsets));
 
         if (set->isAnExternalSamplerBound) {
@@ -3033,7 +3049,7 @@ void VulkanDriver::prepareDraw() {
         mPipelineState.bindInDraw.first = false;
     }
     mDescriptorSetCache.commit(mCurrentRenderPass.commandBuffer, mPipelineState.pipelineLayout,
-            mPipelineState.descriptorSetMask);
+            mPipelineState.descriptorSetMask, VK_PIPELINE_BIND_POINT_GRAPHICS);
 }
 
 void VulkanDriver::draw2(uint32_t indexOffset, uint32_t indexCount, uint32_t instanceCount) {
@@ -3077,7 +3093,45 @@ void VulkanDriver::draw(PipelineState state, Handle<HwRenderPrimitive> rph,
 }
 
 void VulkanDriver::dispatchCompute(Handle<HwProgram> program, math::uint3 workGroupCount) {
-    // FIXME: implement me
+    FILAMENT_CHECK_PRECONDITION(!mCurrentRenderPass.commandBuffer)
+            << "dispatchCompute must be called outside of a render pass.";
+
+    auto vprogram = resource_ptr<VulkanProgram>::cast(&mResourceManager, program);
+    FILAMENT_CHECK_PRECONDITION(vprogram->getComputeShader())
+            << "dispatchCompute requires a compute shader program.";
+
+    VulkanCommandBuffer& commands = mCommands.get();
+    commands.acquire(vprogram);
+
+    VulkanPipelineLayoutCache::DescriptorSetLayoutArray layouts = {};
+    fvkutils::DescriptorSetMask descriptorSetMask;
+    auto const& boundSets = mDescriptorSetCache.getBoundSets();
+    for (size_t i = 0; i < boundSets.size(); ++i) {
+        if (!boundSets[i]) {
+            break;
+        }
+        layouts[i] = boundSets[i]->boundLayout;
+        descriptorSetMask.set(i);
+    }
+
+    VkPipelineLayout const pipelineLayout = mPipelineLayoutCache.getLayout(layouts, vprogram);
+    mDescriptorSetCache.commit(&commands, pipelineLayout, descriptorSetMask,
+            VK_PIPELINE_BIND_POINT_COMPUTE);
+    mPipelineCache.bindComputePipeline(&commands, vprogram, pipelineLayout);
+    vkCmdDispatch(commands.buffer(), workGroupCount.x, workGroupCount.y, workGroupCount.z);
+
+    // Make shader writes visible to a following compute dispatch in this command buffer. Image
+    // layout transitions handle compute-to-graphics dependencies, while this barrier also covers
+    // shader storage buffers.
+    VkMemoryBarrier const barrier = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+    };
+    vkCmdPipelineBarrier(commands.buffer(), VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 1, &barrier, 0, nullptr, 0, nullptr);
 }
 
 void VulkanDriver::scissor(Viewport scissorBox) {
