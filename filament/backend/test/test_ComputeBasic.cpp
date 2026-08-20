@@ -33,6 +33,22 @@ using namespace filament::backend;
 
 namespace {
 
+DescriptorSetLayout createStorageBufferLayout() {
+    DescriptorSetLayout layout;
+    layout.descriptors = utils::FixedCapacityVector<DescriptorSetLayoutDescriptor>::with_capacity(2);
+    layout.descriptors.push_back({
+        .type = DescriptorType::SHADER_STORAGE_BUFFER,
+        .stageFlags = ShaderStageFlags::COMPUTE,
+        .binding = 0,
+    });
+    layout.descriptors.push_back({
+        .type = DescriptorType::SHADER_STORAGE_BUFFER,
+        .stageFlags = ShaderStageFlags::COMPUTE,
+        .binding = 1,
+    });
+    return layout;
+}
+
 DescriptorSetLayout createStorageImageLayout() {
     DescriptorSetLayout layout;
     layout.descriptors = utils::FixedCapacityVector<DescriptorSetLayoutDescriptor>::with_capacity(1);
@@ -82,6 +98,50 @@ void main() {}
 
     driver.dispatchCompute(program, { 1, 1, 1 });
     driver.destroyProgram(program);
+    driver.finish();
+
+    executeCommands();
+}
+
+TEST_F(ComputeTest, bindsStorageBuffersForCompute) {
+    auto& driver = getDriverApi();
+    constexpr uint32_t GROUP_SIZE = 16;
+    constexpr uint32_t GROUP_COUNT = 32;
+    constexpr uint32_t BUFFER_SIZE = GROUP_SIZE * GROUP_COUNT * sizeof(float);
+
+    std::vector<float> input(GROUP_SIZE * GROUP_COUNT, 1.0f);
+    BufferObjectHandle const output = driver.createBufferObject(BUFFER_SIZE,
+            BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
+    BufferObjectHandle const inputBuffer = driver.createBufferObject(BUFFER_SIZE,
+            BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
+    driver.updateBufferObject(inputBuffer, { input.data(), BUFFER_SIZE }, 0);
+
+    DescriptorSetLayoutHandle const layout = driver.createDescriptorSetLayout(
+            createStorageBufferLayout());
+    DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
+    driver.updateDescriptorSetBuffer(descriptorSet, 0, output, 0, BUFFER_SIZE);
+    driver.updateDescriptorSetBuffer(descriptorSet, 1, inputBuffer, 0, BUFFER_SIZE);
+    driver.bindDescriptorSet(descriptorSet, 0, {});
+
+    Program program = createComputeProgram(R"(
+#version 450
+layout(local_size_x = 16) in;
+layout(set = 0, binding = 0, std430) writeonly buffer Output { float elements[]; } outputData;
+layout(set = 0, binding = 1, std430) readonly buffer Input { float elements[]; } inputData;
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    outputData.elements[index] = inputData.elements[index];
+}
+)");
+    program.descriptorLayout(0, createStorageBufferLayout());
+    ProgramHandle const computeProgram = driver.createProgram(std::move(program));
+
+    driver.dispatchCompute(computeProgram, { GROUP_COUNT, 1, 1 });
+    driver.destroyProgram(computeProgram);
+    driver.destroyDescriptorSet(descriptorSet);
+    driver.destroyDescriptorSetLayout(layout);
+    driver.destroyBufferObject(inputBuffer);
+    driver.destroyBufferObject(output);
     driver.finish();
 
     executeCommands();

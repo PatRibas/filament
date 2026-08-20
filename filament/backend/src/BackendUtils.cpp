@@ -689,7 +689,7 @@ namespace utils {
 template<>
 CString to_string<filament::backend::TextureUsage>(filament::backend::TextureUsage value) noexcept {
     using namespace filament::backend;
-    char string[7] = {'-', '-', '-', '-', '-', '-', 0};
+    char string[8] = {'-', '-', '-', '-', '-', '-', '-', 0};
     if (any(value & TextureUsage::UPLOADABLE)) {
         string[0]='U';
     }
@@ -708,7 +708,10 @@ CString to_string<filament::backend::TextureUsage>(filament::backend::TextureUsa
     if (any(value & TextureUsage::SUBPASS_INPUT)) {
         string[5]='f';
     }
-    return { string, 6 };
+    if (any(value & TextureUsage::STORAGE)) {
+        string[6]='w';
+    }
+    return { string, 7 };
 }
 
 template<>

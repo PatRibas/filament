@@ -96,6 +96,9 @@ void VulkanBufferProxy::loadFromCpu(VulkanCommandBuffer& commands, const void* c
         } else if (getBinding() == VulkanBufferBinding::INDEX) {
             srcAccess = VK_ACCESS_INDEX_READ_BIT;
             srcStage = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        } else if (getBinding() == VulkanBufferBinding::SHADER_STORAGE) {
+            srcAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         }
 
         VkBufferMemoryBarrier barrier = {
@@ -136,7 +139,8 @@ void VulkanBufferProxy::loadFromCpu(VulkanCommandBuffer& commands, const void* c
         dstAccessMask |= VK_ACCESS_UNIFORM_READ_BIT;
         dstStageMask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
     } else if (getBinding() == VulkanBufferBinding::SHADER_STORAGE) {
-        // TODO: implement me
+        dstAccessMask |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        dstStageMask |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
     }
 
     VkBufferMemoryBarrier barrier = {
