@@ -41,6 +41,7 @@ class Texture;
 class TextureSampler;
 class UniformBuffer;
 class BufferInterfaceBlock;
+class BufferObject;
 
 /**
  * A MaterialInstance represents a specific instance of a Material.
@@ -206,6 +207,39 @@ public:
     void setParameter(const char* UTILS_NONNULL name,
                       Texture const* UTILS_NULLABLE texture, TextureSampler const& sampler) {
         setParameter(name, strlen(name), texture, sampler);
+    }
+
+    /**
+     * Set a storage image as the named parameter of a compute material.
+     *
+     * @param name    Name of the image parameter as defined by Material.
+     * @param texture  Non-null texture created with Texture::Usage::STORAGE.
+     */
+    void setParameter(const char* UTILS_NONNULL name, size_t nameLength,
+            Texture const* UTILS_NONNULL texture);
+
+    /** Inline helper to provide the name as a null-terminated C string. */
+    void setParameter(const char* UTILS_NONNULL name, Texture const* UTILS_NONNULL texture) {
+        setParameter(name, strlen(name), texture);
+    }
+
+    /**
+     * Set a shader storage buffer as the named parameter of a material.
+     *
+     * @param name       Name of the buffer parameter as defined by Material.
+     * @param nameLength Length in char of the name parameter.
+     * @param buffer     Non-null BufferObject created with BindingType::SHADER_STORAGE. Surface
+     *                   materials may read this from their vertex or fragment shader.
+     * @param offset     Offset in bytes into buffer.
+     * @param size       Size in bytes to bind. A value of zero binds the remaining buffer range.
+     */
+    void setParameter(const char* UTILS_NONNULL name, size_t nameLength,
+            BufferObject const* UTILS_NONNULL buffer, uint32_t offset = 0, uint32_t size = 0);
+
+    /** Inline helper to provide the name as a null-terminated C string. */
+    void setParameter(const char* UTILS_NONNULL name, BufferObject const* UTILS_NONNULL buffer,
+            uint32_t offset = 0, uint32_t size = 0) {
+        setParameter(name, strlen(name), buffer, offset, size);
     }
 
 

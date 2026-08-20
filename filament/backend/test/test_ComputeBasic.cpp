@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright (C) 2026 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,164 +16,167 @@
 
 #include "ComputeTest.h"
 
+#include "builtinResource.h"
+
+#include <backend/DriverEnums.h>
+#include <backend/Program.h>
+
+#include <utils/FixedCapacityVector.h>
+
+#include <GlslangToSpv.h>
+#include <glslang/Public/ShaderLang.h>
+
+#include <vector>
+
 using namespace filament;
 using namespace filament::backend;
 
-TEST_F(ComputeTest, basic) {
-    auto& driver = getDriverApi();
+namespace {
 
-    std::string shader_gles310 = {R"(
-#version 310 es
-layout(local_size_x = 16) in;
-void main() {
-}
-)"};
+Program createComputeProgram(const char* shaderSource) {
+    glslang::TProgram glslangProgram;
+    glslang::TShader glslangShader(EShLangCompute);
+    glslangShader.setStrings(&shaderSource, 1);
+    glslangShader.setAutoMapBindings(false);
 
-    std::string shader_gl450 = {R"(
-#version 450 core
-layout(local_size_x = 16) in;
-void main() {
-}
-)"};
-
-    std::string shader_msl = {R"(
-#include <simd/simd.h>
-#include <metal_stdlib>
-using namespace metal;
-constant uint3 WorkGroupSize [[maybe_unused]] = uint3(16u, 1u, 1u);
-kernel void main0() {}
-)"};
-
-    std::string shader_spirv = {R"(
-// TODO: spirv test
-)"};
-
-    std::string_view shader;
-    switch (getBackend()) {
-        case Backend::OPENGL:   shader = isMobile() ? shader_gles310 : shader_gl450;    break;
-        case Backend::VULKAN:   shader = shader_spirv;  break;
-        case Backend::METAL:    shader = shader_msl;    break;
-        default:
-            GTEST_FATAL_FAILURE_("unexpected backend");
+    EShMessages const messages = EShMessages(EShMsgVulkanRules | EShMsgSpvRules);
+    if (!glslangShader.parse(&DefaultTBuiltInResource, 450, false, messages)) {
+        ADD_FAILURE() << glslangShader.getInfoLog();
+        return {};
     }
+    glslangProgram.addShader(&glslangShader);
+    if (!glslangProgram.link(messages)) {
+        ADD_FAILURE() << glslangShader.getInfoLog();
+        return {};
+    }
+
+    std::vector<uint32_t> spirv;
+    glslang::GlslangToSpv(*glslangProgram.getIntermediate(EShLangCompute), spirv);
 
     Program program;
-    program.shaderLanguage(ShaderLanguage::ESSL3);
-    program.shader(ShaderStage::COMPUTE, shader.data(), shader.size() + 1);
-
-    Handle<HwProgram> ph = driver.createProgram(std::move(program));
-    driver.dispatchCompute(ph, { 1, 1, 1 });
-    driver.destroyProgram(ph);
-    driver.finish();
-
-    executeCommands();
-    getDriver().purge();
+    program.shaderLanguage(ShaderLanguage::SPIRV);
+    program.shader(ShaderStage::COMPUTE, spirv.data(), spirv.size() * sizeof(uint32_t));
+    return program;
 }
 
-TEST_F(ComputeTest, copy) {
-    auto& driver = getDriverApi();
-
-    std::string shader_gles310 = {R"(
-#version 310 es
-layout(local_size_x = 16) in;
-layout(std430) buffer;
-layout(binding = 0) writeonly buffer Output { float elements[]; } output_data;
-layout(binding = 1) readonly  buffer Input0 { float elements[]; } input_data;
-void main() {
-    uint ident = gl_GlobalInvocationID.x;
-    output_data.elements[ident] = input_data.elements[ident];
-}
-)"};
-
-    std::string shader_gl450 = {R"(
-#version 450 core
-layout(local_size_x = 16) in;
-layout(std430) buffer;
-layout(binding = 0) writeonly buffer Output { float elements[]; } output_data;
-layout(binding = 1) readonly  buffer Input0 { float elements[]; } input_data;
-void main() {
-    uint ident = gl_GlobalInvocationID.x;
-    output_data.elements[ident] = input_data.elements[ident];
-}
-)"};
-
-    std::string shader_msl = {R"(
-#include <simd/simd.h>
-#include <metal_stdlib>
-using namespace metal;
-struct Output_data {
-    float elements[1];
-};
-struct Input_data {
-    float elements[1];
-};
-constant uint3 WorkGroupSize [[maybe_unused]] = uint3(16u, 1u, 1u);
-kernel void main0(device Output_data& output_data [[buffer(0)]],
-        device Input_data& input_data [[buffer(1)]],
-        uint3 GlobalInvocationID [[thread_position_in_grid]]) {
-    output_data.elements[GlobalInvocationID.x] = input_data.elements[GlobalInvocationID.x];
-}
-)"};
-
-    std::string shader_spirv = {R"(
-// TODO: spirv test
-)"};
-
-    std::string_view shader;
-    switch (getBackend()) {
-        case Backend::OPENGL:   shader = isMobile() ? shader_gles310 : shader_gl450;    break;
-        case Backend::VULKAN:   shader = shader_spirv;  break;
-        case Backend::METAL:    shader = shader_msl;    break;
-        default:
-            GTEST_FATAL_FAILURE_("unexpected backend");
-    }
-
-    size_t groupSize = 16;
-    size_t groupCount = 1024;
-    size_t size = groupSize * groupCount * sizeof(float);
-
-    std::vector<float> data(groupSize * groupCount);
-    std::generate(data.begin(), data.end(), [v = 0.0f]() mutable {
-        v = v + 1.0f;
-        return v;
+DescriptorSetLayout createStorageBufferLayout() {
+    DescriptorSetLayout layout;
+    layout.descriptors = utils::FixedCapacityVector<DescriptorSetLayoutDescriptor>::with_capacity(2);
+    layout.descriptors.push_back({
+        .type = DescriptorType::SHADER_STORAGE_BUFFER,
+        .stageFlags = ShaderStageFlags::COMPUTE,
+        .binding = 0,
     });
+    layout.descriptors.push_back({
+        .type = DescriptorType::SHADER_STORAGE_BUFFER,
+        .stageFlags = ShaderStageFlags::COMPUTE,
+        .binding = 1,
+    });
+    return layout;
+}
 
-    driver.startCapture(0);
+DescriptorSetLayout createStorageImageLayout() {
+    DescriptorSetLayout layout;
+    layout.descriptors = utils::FixedCapacityVector<DescriptorSetLayoutDescriptor>::with_capacity(1);
+    layout.descriptors.push_back({
+        .type = DescriptorType::STORAGE_IMAGE_2D_FLOAT,
+        .stageFlags = ShaderStageFlags::COMPUTE,
+        .binding = 0,
+    });
+    return layout;
+}
 
-    auto output_data = driver.createBufferObject(size, BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
-    auto input_data = driver.createBufferObject(size, BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
-    driver.updateBufferObject(input_data, { data.data(), size }, 0);
+} // anonymous namespace
 
-    Program program;
-    program.shaderLanguage(ShaderLanguage::ESSL3);
-    program.shader(ShaderStage::COMPUTE, shader.data(), shader.size() + 1);
-    Handle<HwProgram> ph = driver.createProgram(std::move(program));
+TEST_F(ComputeTest, dispatchesComputeProgram) {
+    auto& driver = getDriverApi();
+    ProgramHandle const program = driver.createProgram(createComputeProgram(R"(
+#version 450
+layout(local_size_x = 16) in;
+void main() {}
+)"));
 
-
-    driver.bindBufferRange(BufferObjectBinding::SHADER_STORAGE, 0, output_data, 0, size);
-    driver.bindBufferRange(BufferObjectBinding::SHADER_STORAGE, 1, input_data, 0, size);
-
-    driver.dispatchCompute(ph, { groupCount, 1, 1 });
-
-// FIXME: we need a way to unbind the buffer in order to read from them
-//    driver.unbindBuffer(BufferObjectBinding::SHADER_STORAGE, 0);
-//    driver.unbindBuffer(BufferObjectBinding::SHADER_STORAGE, 1);
-
-    float* const user = (float*)malloc(size);
-    driver.readBufferSubData(output_data, 0, size, { user, size });
-
-    driver.destroyProgram(ph);
-    driver.destroyBufferObject(input_data);
-    driver.destroyBufferObject(output_data);
+    driver.dispatchCompute(program, { 1, 1, 1 });
+    driver.destroyProgram(program);
     driver.finish();
 
-    driver.stopCapture(0);
+    executeCommands();
+}
+
+TEST_F(ComputeTest, bindsStorageBuffersForCompute) {
+    auto& driver = getDriverApi();
+    constexpr uint32_t GROUP_SIZE = 16;
+    constexpr uint32_t GROUP_COUNT = 32;
+    constexpr uint32_t BUFFER_SIZE = GROUP_SIZE * GROUP_COUNT * sizeof(float);
+
+    std::vector<float> input(GROUP_SIZE * GROUP_COUNT, 1.0f);
+    BufferObjectHandle const output = driver.createBufferObject(BUFFER_SIZE,
+            BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
+    BufferObjectHandle const inputBuffer = driver.createBufferObject(BUFFER_SIZE,
+            BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
+    driver.updateBufferObject(inputBuffer, { input.data(), BUFFER_SIZE }, 0);
+
+    DescriptorSetLayoutHandle const layout = driver.createDescriptorSetLayout(
+            createStorageBufferLayout());
+    DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
+    driver.updateDescriptorSetBuffer(descriptorSet, 0, output, 0, BUFFER_SIZE);
+    driver.updateDescriptorSetBuffer(descriptorSet, 1, inputBuffer, 0, BUFFER_SIZE);
+    driver.bindDescriptorSet(descriptorSet, 0, {});
+
+    Program program = createComputeProgram(R"(
+#version 450
+layout(local_size_x = 16) in;
+layout(set = 0, binding = 0, std430) writeonly buffer Output { float elements[]; } outputData;
+layout(set = 0, binding = 1, std430) readonly buffer Input { float elements[]; } inputData;
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    outputData.elements[index] = inputData.elements[index];
+}
+)");
+    program.descriptorLayout(0, createStorageBufferLayout());
+    ProgramHandle const computeProgram = driver.createProgram(std::move(program));
+
+    driver.dispatchCompute(computeProgram, { GROUP_COUNT, 1, 1 });
+    driver.destroyProgram(computeProgram);
+    driver.destroyDescriptorSet(descriptorSet);
+    driver.destroyDescriptorSetLayout(layout);
+    driver.destroyBufferObject(inputBuffer);
+    driver.destroyBufferObject(output);
+    driver.finish();
 
     executeCommands();
-    getDriver().purge();
+}
 
-    // TODO: check buffer content
-    EXPECT_EQ(memcmp(user, data.data(), size), 0);
+TEST_F(ComputeTest, writesStorageImageFromCompute) {
+    auto& driver = getDriverApi();
+    constexpr uint32_t TEXTURE_SIZE = 8;
 
-    free(user);
+    TextureHandle const texture = driver.createTexture(SamplerType::SAMPLER_2D, 1,
+            TextureFormat::RGBA8, 1, TEXTURE_SIZE, TEXTURE_SIZE, 1,
+            TextureUsage::STORAGE | TextureUsage::SAMPLEABLE);
+    DescriptorSetLayoutHandle const layout = driver.createDescriptorSetLayout(
+            createStorageImageLayout());
+    DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
+    driver.updateDescriptorSetTexture(descriptorSet, 0, texture, {});
+    driver.bindDescriptorSet(descriptorSet, 0, {});
+
+    Program program = createComputeProgram(R"(
+#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outputImage;
+void main() {
+    imageStore(outputImage, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 0.0, 0.0, 1.0));
+}
+)");
+    program.descriptorLayout(0, createStorageImageLayout());
+    ProgramHandle const computeProgram = driver.createProgram(std::move(program));
+
+    driver.dispatchCompute(computeProgram, { 1, 1, 1 });
+    driver.destroyProgram(computeProgram);
+    driver.destroyDescriptorSet(descriptorSet);
+    driver.destroyDescriptorSetLayout(layout);
+    driver.destroyTexture(texture);
+    driver.finish();
+
+    executeCommands();
 }

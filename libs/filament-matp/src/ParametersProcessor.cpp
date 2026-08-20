@@ -107,6 +107,10 @@ static Status processInterpolation(MaterialBuilder& builder, const JsonishValue&
  * "float[2foo]" returns 0 and "float[2foo]" is unmodified
  */
 static ssize_t extractArraySize(std::string& type) {
+    while (!type.empty() && isspace(static_cast<unsigned char>(type.back()))) {
+        type.pop_back();
+    }
+
     auto start = type.find_first_of('[');
     // Not an array
     if (start == std::string::npos) {
@@ -574,6 +578,36 @@ static Status processBuffers(MaterialBuilder& builder, const JsonishValue& v) {
         return Status::invalidArgument("buffers must be an array of OBJECTs.");
     }
     return status;
+}
+
+static Status processImage(MaterialBuilder& builder, const JsonishObject& jsonObject) noexcept {
+    const JsonishValue* nameValue = jsonObject.getValue("name");
+    const JsonishValue* formatValue = jsonObject.getValue("format");
+    if (!nameValue || !formatValue) {
+        return Status::invalidArgument("images entries require 'name' and 'format' keys.");
+    }
+    if (nameValue->getType() != JsonishValue::STRING || formatValue->getType() != JsonishValue::STRING) {
+        return Status::invalidArgument("images name and format values must be STRINGs.");
+    }
+
+    auto const name = nameValue->toJsonString()->getString();
+    auto const format = formatValue->toJsonString()->getString();
+    builder.image(name.data(), format.data());
+    return Status::ok();
+}
+
+static Status processImages(MaterialBuilder& builder, const JsonishValue& value) {
+    auto const jsonArray = value.toJsonArray();
+    for (auto const image : jsonArray->getElements()) {
+        if (image->getType() != JsonishValue::OBJECT) {
+            return Status::invalidArgument("images must be an array of OBJECTs.");
+        }
+        Status const status = processImage(builder, *image->toJsonObject());
+        if (!status.isOk()) {
+            return status;
+        }
+    }
+    return Status::ok();
 }
 
 
@@ -1369,6 +1403,7 @@ ParametersProcessor::ParametersProcessor() {
     mParameters["parameters"]                    = { &processParameters, Type::ARRAY };
     mParameters["constants"]                     = { &processConstants, Type::ARRAY };
     mParameters["buffers"]                       = { &processBuffers, Type::ARRAY };
+    mParameters["images"]                        = { &processImages, Type::ARRAY };
     mParameters["subpasses"]                     = { &processSubpasses, Type::ARRAY };
     mParameters["variables"]                     = { &processVariables, Type::ARRAY };
     mParameters["requires"]                      = { &processRequires, Type::ARRAY };

@@ -80,6 +80,12 @@ inline void fromStageFlags(backend::ShaderStageFlags stage, descriptor_binding_t
     if ((bool) (stage & ShaderStageFlags::FRAGMENT)) {
         mask.set(binding + fvkutils::getFragmentStageShift<Bitmask>());
     }
+    if ((bool) (stage & ShaderStageFlags::COMPUTE)) {
+        // Compute descriptors use the lower half of the existing two-stage bitmask. Vulkan
+        // layouts below expose all shader stages, so this bit remains distinct from a fragment
+        // binding while preserving the descriptor cache's compact representation.
+        mask.set(binding + fvkutils::getVertexStageShift<Bitmask>());
+    }
 }
 
 using BitmaskGroup = VulkanDescriptorSetLayout::Bitmask;
@@ -131,9 +137,16 @@ BitmaskGroup fromBackendLayout(DescriptorSetLayout const& layout) {
                 fromStageFlags(descriptor.stageFlags, descriptor.binding, mask.inputAttachment);
                 break;
             }
-            case DescriptorType::SHADER_STORAGE_BUFFER:
-                PANIC_POSTCONDITION("Shader storage is not supported");
+            case DescriptorType::SHADER_STORAGE_BUFFER: {
+                fromStageFlags(descriptor.stageFlags, descriptor.binding, mask.storageBuffer);
                 break;
+            }
+            case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_2D_INT:
+            case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+                fromStageFlags(descriptor.stageFlags, descriptor.binding, mask.storageImage);
+                break;
+            }
         }
     }
     return mask;
@@ -194,6 +207,9 @@ VulkanDescriptorSet::VulkanDescriptorSet(fvkmemory::resource_ptr<VulkanDescripto
         OnRecycle&& onRecycleFn, VkDescriptorSet vkSet)
     : boundLayout(layout->getVkLayout()),
       dynamicUboMask(layout->bitmask.dynamicUbo),
+      storageBufferMask(layout->bitmask.storageBuffer),
+      storageImageMask(layout->bitmask.storageImage),
+      samplerMask(layout->bitmask.sampler),
       uniqueDynamicUboCount(layout->count.dynamicUbo),
       mLayout(layout),
       mCurrentSetIndex(0) {
@@ -210,6 +226,29 @@ void VulkanDescriptorSet::referencedBy(VulkanCommandBuffer& commands) {
         bo->referencedBy(commands);
     });
     mSets[mCurrentSetIndex].fenceStatus = commands.getFenceStatus();
+}
+
+void VulkanDescriptorSet::prepareFor(VulkanCommandBuffer& commands,
+        VkPipelineBindPoint const bindPoint) const {
+    if (bindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) {
+        storageImageMask.forEachSetBit([this, &commands](size_t const binding) {
+            if (mTextureMask[binding]) {
+                auto texture = fvkmemory::resource_ptr<VulkanTexture>::cast(
+                        static_cast<VulkanTexture*>(mResources[mTextureResources[binding]].get()));
+                texture->transitionLayout(&commands, texture->getPrimaryViewRange(),
+                        VulkanLayout::COMPUTE_IMAGE);
+            }
+        });
+    } else {
+        samplerMask.forEachSetBit([this, &commands](size_t const binding) {
+            if (mTextureMask[binding]) {
+                auto texture = fvkmemory::resource_ptr<VulkanTexture>::cast(
+                        static_cast<VulkanTexture*>(mResources[mTextureResources[binding]].get()));
+                texture->transitionLayout(&commands, texture->getPrimaryViewRange(),
+                        texture->getSamplerLayout());
+            }
+        });
+    }
 }
 
 void VulkanDescriptorSet::gc() {

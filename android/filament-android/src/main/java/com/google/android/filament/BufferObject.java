@@ -30,8 +30,7 @@ import java.nio.BufferOverflowException;
  * only when you need to share data between multiple VertexBuffer instances. It also allows you to
  * efficiently swap-out the buffers in VertexBuffer.
  *
- * NOTE: For now this is only used for vertex data, but in the future we may use it for other things
- * (e.g. compute).
+ * Buffer objects can also be used as shader storage buffers by compute materials.
  *
  * @see VertexBuffer
  */
@@ -50,6 +49,8 @@ public class BufferObject {
 
         public enum BindingType {
             VERTEX,
+            UNIFORM,
+            SHADER_STORAGE,
         }
 
         public Builder() {
@@ -72,7 +73,7 @@ public class BufferObject {
         /**
          * The binding type for this buffer object. (defaults to VERTEX)
          *
-         * @param bindingType Distinguishes between SSBO, VBO, etc. For now this must be VERTEX.
+         * @param bindingType Distinguishes between SSBO, VBO, etc.
          * @return A reference to this Builder for chaining calls.
          */
         @NonNull

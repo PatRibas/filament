@@ -712,23 +712,22 @@ if (FILAMENT_BUILD_TESTING)
     # ==================================================================================================
     # Compute tests
     #
-    #if (NOT IOS AND NOT WASM)
-    #
-    #add_executable(compute_test
-    #        test/ComputeTest.cpp
-    #        test/Arguments.cpp
-    #        test/test_ComputeBasic.cpp
-    #        )
-    #
-    #target_link_libraries(compute_test PRIVATE
-    #        backend
-    #        getopt
-    #        gtest
-    #        )
-    #
-    #set_target_properties(compute_test PROPERTIES FOLDER Tests)
-    #
-    #endif()
+    if (LINUX)
+        add_executable(compute_test
+                test/ComputeTest.cpp
+                test/Arguments.cpp
+                test/test_ComputeBasic.cpp
+                )
+
+        target_link_libraries(compute_test PRIVATE
+                backend
+                gtest
+                glslang
+                SPIRV
+                )
+
+        set_target_properties(compute_test PROPERTIES FOLDER Tests)
+    endif()
 
     # ==================================================================================================
     # Metal utils tests

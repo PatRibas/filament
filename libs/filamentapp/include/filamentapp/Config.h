@@ -21,6 +21,8 @@
 
 #include <camutils/Manipulator.h>
 
+#include <math/vec3.h>
+
 #include <string>
 
 struct Config {
@@ -32,6 +34,9 @@ struct Config {
     mutable filament::Engine::Backend backend = filament::Engine::Backend::DEFAULT;
     mutable filament::backend::FeatureLevel featureLevel = filament::backend::FeatureLevel::FEATURE_LEVEL_3;
     filament::camutils::Mode cameraMode = filament::camutils::Mode::ORBIT;
+    filament::math::float3 cameraTarget = { 0.0f, 0.0f, -4.0f };
+    filament::math::float3 cameraPosition = { 0.0f, 0.0f, 1.0f };
+    float zoomSpeed = 0.2f;
     bool resizeable = true;
     bool headless = false;
     int stereoscopicEyeCount = 2;

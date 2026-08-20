@@ -52,6 +52,7 @@ namespace filament {
 
 class FMaterial;
 class FTexture;
+class FBufferObject;
 
 class FMaterialInstance : public MaterialInstance {
 public:
@@ -304,6 +305,10 @@ private:
 
     void setParameterImpl(std::string_view name,
             FTexture const* texture, TextureSampler const& sampler);
+
+    void setParameterImpl(std::string_view name, FTexture const* texture);
+    void setParameterImpl(std::string_view name, FBufferObject const* buffer,
+            uint32_t offset, uint32_t size);
 
     template<typename T>
     T getParameterImpl(std::string_view name) const;

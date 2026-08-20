@@ -341,6 +341,17 @@ public class MaterialInstance {
         nSetParameterTexture(getNativeObject(), name, texture.getNativeObject(), sampler.mSampler);
     }
 
+    /** Sets a storage image parameter on a compute material. */
+    public void setParameter(@NonNull String name, @NonNull Texture texture) {
+        nSetParameterStorageImage(getNativeObject(), name, texture.getNativeObject());
+    }
+
+    /** Sets a shader storage buffer parameter on a compute material. */
+    public void setParameter(@NonNull String name, @NonNull BufferObject buffer,
+            @IntRange(from = 0) int offset, @IntRange(from = 0) int size) {
+        nSetParameterStorageBuffer(getNativeObject(), name, buffer.getNativeObject(), offset, size);
+    }
+
     /**
      * Set a bool parameter array by name.
      *
@@ -1054,6 +1065,10 @@ public class MaterialInstance {
 
     private static native void nSetParameterTexture(long nativeMaterialInstance,
             @NonNull String name, long nativeTexture, long sampler);
+    private static native void nSetParameterStorageImage(long nativeMaterialInstance,
+            @NonNull String name, long nativeTexture);
+    private static native void nSetParameterStorageBuffer(long nativeMaterialInstance,
+            @NonNull String name, long nativeBuffer, int offset, int size);
 
     private static native void nSetScissor(long nativeMaterialInstance,
             @IntRange(from = 0) int left, @IntRange(from = 0) int bottom,

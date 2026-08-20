@@ -938,6 +938,8 @@ public class Texture {
         public static final int PROTECTED = 0x0100;
         /** Texture can be used with generateMipmaps() */
         public static final int GEN_MIPMAPPABLE = 0x0200;
+        /** Texture can be used as a storage image. */
+        public static final int STORAGE = 0x0400;
         /** by default textures are <code>UPLOADABLE</code> and <code>SAMPLEABLE</code>*/
         public static final int DEFAULT = UPLOADABLE | SAMPLEABLE;
     }

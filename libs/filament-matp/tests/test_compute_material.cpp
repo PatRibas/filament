@@ -25,11 +25,24 @@ material {
     name: test_compute,
     domain: compute,
     groupSize: [8, 8, 1],
-    parameters: [
+    buffers: [
+        {
+            name: Result,
+            qualifiers: [writeonly],
+            fields: [
+                { name: value, type: float }
+            ]
+        }
+    ],
+    images: [
+        { name: outputImage, format: rgba8 }
     ]
 }
 compute {
     void compute() {
+        ivec2 coordinate = ivec2(gl_GlobalInvocationID.xy);
+        imageStore(outputImage, coordinate, vec4(1.0));
+        result.value = 1.0;
     }
 }
 )");
@@ -56,4 +69,3 @@ TEST(TestParseAndComputeMaterial, JsonMaterialCompilerSimple) {
     js.emancipate();
     filamat::MaterialBuilder::shutdown();
 }
-

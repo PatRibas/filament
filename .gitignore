@@ -18,6 +18,7 @@ test*.json
 results
 /compile_commands.json
 /.cache
+.gradle/
 
 # For /test/renderdiff dependencies
 /mesa

@@ -148,7 +148,13 @@ public:
 
     // generate buffers
     utils::io::sstream& generateBuffers(utils::io::sstream& out,
-            MaterialInfo::BufferContainer const& buffers) const;
+            filament::DescriptorSetBindingPoints set,
+            MaterialInfo::BufferContainer const& buffers, ShaderStage stage) const;
+
+    // generate storage images
+    utils::io::sstream& generateImages(utils::io::sstream& out,
+            filament::DescriptorSetBindingPoints set,
+            MaterialInfo::ImageContainer const& images) const;
 
     // generate an interface block
     utils::io::sstream& generateBufferInterfaceBlock(utils::io::sstream& out, ShaderStage stage,

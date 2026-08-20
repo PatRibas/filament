@@ -486,6 +486,11 @@ void GLSLPostProcessor::spirvToMsl(const SpirvBlob* spirv, std::string* outMsl,
                             .sampler(info.binding * 2 + 1, samplerName);
                     break;
                 }
+                case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+                case DescriptorType::STORAGE_IMAGE_2D_INT:
+                case DescriptorType::STORAGE_IMAGE_2D_UINT:
+                    // Storage images are currently emitted only for Vulkan materials.
+                    break;
             }
         }
         argumentBuffers.push_back(argBufferBuilder.build());

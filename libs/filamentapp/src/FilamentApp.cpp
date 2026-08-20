@@ -740,11 +740,17 @@ FilamentApp::Window::Window(FilamentApp* filamentApp, const Config& config, std:
 
     // set-up the camera manipulators
     mMainCameraMan = CameraManipulator::Builder()
-            .targetPosition(0, 0, -4)
+            .targetPosition(config.cameraTarget.x, config.cameraTarget.y, config.cameraTarget.z)
+            .orbitHomePosition(
+                    config.cameraPosition.x, config.cameraPosition.y, config.cameraPosition.z)
+            .zoomSpeed(config.zoomSpeed)
             .flightMoveDamping(15.0)
             .build(config.cameraMode);
     mDebugCameraMan = CameraManipulator::Builder()
-            .targetPosition(0, 0, -4)
+            .targetPosition(config.cameraTarget.x, config.cameraTarget.y, config.cameraTarget.z)
+            .orbitHomePosition(
+                    config.cameraPosition.x, config.cameraPosition.y, config.cameraPosition.z)
+            .zoomSpeed(config.zoomSpeed)
             .flightMoveDamping(15.0)
             .build(config.cameraMode);
 
@@ -764,7 +770,7 @@ FilamentApp::Window::Window(FilamentApp* filamentApp, const Config& config, std:
     // configure the cameras
     configureCamerasForWindow(cameraParams);
 
-    mMainCamera->lookAt({4, 0, -4}, {0, 0, -4}, {0, 1, 0});
+    mMainCamera->lookAt(config.cameraPosition, config.cameraTarget, { 0, 1, 0 });
 }
 
 FilamentApp::Window::~Window() {
