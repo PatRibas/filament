@@ -610,6 +610,10 @@ class_<Engine>("Engine")
     .function("destroyMaterialInstance", (void (*)(Engine*, MaterialInstance*)) []
             (Engine* engine, MaterialInstance* mi) { engine->destroy(mi); },
             allow_raw_pointers())
+    .function("dispatch", EMBIND_LAMBDA(void, (Engine* engine, MaterialInstance* mi,
+            uint32_t x, uint32_t y, uint32_t z), {
+        engine->dispatch(mi, { x, y, z });
+    }), allow_raw_pointers())
     /// destroyRenderTarget ::method::
     /// rt ::argument:: the [RenderTarget] to destroy
     .function("destroyRenderTarget", (void (*)(Engine*, RenderTarget*)) []
@@ -1503,6 +1507,13 @@ class_<MaterialInstance>("MaterialInstance")
     .function("setTextureParameter", EMBIND_LAMBDA(void,
             (MaterialInstance* self, std::string name, Texture* value, TextureSampler sampler), {
         self->setParameter(name.c_str(), value, sampler); }), allow_raw_pointers())
+    .function("setStorageImageParameter", EMBIND_LAMBDA(void,
+            (MaterialInstance* self, std::string name, Texture* value), {
+        self->setParameter(name.c_str(), value); }), allow_raw_pointers())
+    .function("setStorageBufferParameter", EMBIND_LAMBDA(void,
+            (MaterialInstance* self, std::string name, BufferObject* value,
+                    uint32_t offset, uint32_t size), {
+        self->setParameter(name.c_str(), value, offset, size); }), allow_raw_pointers())
     .function("setColor3Parameter", EMBIND_LAMBDA(void,
             (MaterialInstance* self, std::string name, RgbType type, filament::math::float3 value), {
         self->setParameter(name.c_str(), type, value); }), allow_raw_pointers())
@@ -1627,7 +1638,7 @@ class_<TexBuilder>("Texture$Builder")
     // This takes a bitfield that can be composed by or'ing constants.
     // - JS clients should use the value member, as in: "Texture$Usage.SAMPLEABLE.value".
     // - TypeScript clients can simply say "TextureUsage.SAMPLEABLE" (note the lack of $)
-    .BUILDER_FUNCTION("usage", TexBuilder, (TexBuilder* builder, uint8_t usage), {
+    .BUILDER_FUNCTION("usage", TexBuilder, (TexBuilder* builder, uint16_t usage), {
         return &builder->usage((Texture::Usage)usage); });
 
 class_<IndirectLight>("IndirectLight")

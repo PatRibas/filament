@@ -1302,6 +1302,18 @@ public class Engine {
     }
 
     /**
+     * Dispatches a compute material instance.
+     *
+     * @param materialInstance compute material instance to dispatch
+     * @param x number of work groups along the X axis
+     * @param y number of work groups along the Y axis
+     * @param z number of work groups along the Z axis
+     */
+    public void dispatch(@NonNull MaterialInstance materialInstance, int x, int y, int z) {
+        nDispatch(getNativeObject(), materialInstance.getNativeObject(), x, y, z);
+    }
+
+    /**
      * Destroys a {@link Skybox} and frees all its associated resources.
      * @param skybox the {@link Skybox} to destroy
      */
@@ -1565,6 +1577,8 @@ public class Engine {
     private static native boolean nDestroyIndirectLight(long nativeEngine, long nativeIndirectLight);
     private static native boolean nDestroyMaterial(long nativeEngine, long nativeMaterial);
     private static native boolean nDestroyMaterialInstance(long nativeEngine, long nativeMaterialInstance);
+    private static native void nDispatch(long nativeEngine, long nativeMaterialInstance,
+            int x, int y, int z);
     private static native boolean nDestroySkybox(long nativeEngine, long nativeSkybox);
     private static native boolean nDestroyColorGrading(long nativeEngine, long nativeColorGrading);
     private static native boolean nDestroyTexture(long nativeEngine, long nativeTexture);

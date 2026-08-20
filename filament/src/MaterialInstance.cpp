@@ -16,6 +16,7 @@
 
 #include "details/MaterialInstance.h"
 
+#include "details/BufferObject.h"
 #include "details/Material.h"
 
 #include <filament/Color.h>
@@ -228,6 +229,17 @@ template UTILS_PUBLIC uint4 MaterialInstance::getParameter<uint4>      (const ch
 template UTILS_PUBLIC float2 MaterialInstance::getParameter<float2>      (const char* name, size_t nameLength) const;
 template UTILS_PUBLIC float3 MaterialInstance::getParameter<float3>      (const char* name, size_t nameLength) const;
 template UTILS_PUBLIC float4 MaterialInstance::getParameter<float4>      (const char* name, size_t nameLength) const;
+
+void MaterialInstance::setParameter(const char* const name, size_t const nameLength,
+        Texture const* const texture) {
+    downcast(this)->setParameterImpl({ name, nameLength }, downcast(texture));
+}
+
+void MaterialInstance::setParameter(const char* const name, size_t const nameLength,
+        BufferObject const* const buffer, uint32_t const offset, uint32_t const size) {
+    downcast(this)->setParameterImpl({ name, nameLength }, downcast(buffer), offset, size);
+}
+
 template UTILS_PUBLIC mat4f MaterialInstance::getParameter<mat4f>      (const char* name, size_t nameLength) const;
 template UTILS_PUBLIC mat3f MaterialInstance::getParameter<mat3f>      (const char* name, size_t nameLength) const;
 

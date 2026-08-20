@@ -397,6 +397,8 @@ public:
     bool destroy(const FIndirectLight* p);
     bool destroy(const FMaterial* p);
     bool destroy(const FMaterialInstance* p);
+    void dispatch(const FMaterialInstance* materialInstance,
+            math::uint3 workGroupCount) noexcept;
     bool destroy(const FRenderer* p);
     bool destroy(const FScene* p);
     bool destroy(const FSkybox* p);

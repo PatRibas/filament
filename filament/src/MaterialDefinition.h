@@ -188,6 +188,9 @@ private:
     backend::Program getSurfaceProgram(FEngine& engine, MaterialParser const& parser,
             ProgramSpecialization const& specialization) const noexcept;
 
+    backend::Program getComputeProgram(FEngine const& engine, MaterialParser const& parser,
+            ProgramSpecialization const& specialization) const;
+
     backend::Program getProgramWithVariants(FEngine const& engine, MaterialParser const& parser,
             ProgramSpecialization const& specialization, Variant vertexVariant,
             Variant fragmentVariant) const;

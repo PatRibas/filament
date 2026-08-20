@@ -19,6 +19,7 @@
 #include "MaterialParser.h"
 #include "RenderPass.h"
 
+#include "details/BufferObject.h"
 #include "details/Engine.h"
 #include "details/Material.h"
 #include "details/Stream.h"
@@ -377,6 +378,35 @@ void FMaterialInstance::setParameterImpl(std::string_view const name,
     }
 }
 
+void FMaterialInstance::setParameterImpl(std::string_view const name, FTexture const* texture) {
+    FILAMENT_CHECK_PRECONDITION(texture) << "Storage image parameter cannot be null.";
+    FILAMENT_CHECK_PRECONDITION(mMaterial->getMaterialDomain() == MaterialDomain::COMPUTE)
+            << "Storage images are only supported by compute materials.";
+    FILAMENT_CHECK_PRECONDITION(any(texture->getUsage() & TextureUsage::STORAGE))
+            << "Texture for storage image parameter \"" << name << "\" is not STORAGE.";
+
+    mDescriptorSet.setStorageImage(mMaterial->getDescriptorSetLayout(),
+            mMaterial->getImageBinding(name), texture->getHwHandle());
+}
+
+void FMaterialInstance::setParameterImpl(std::string_view const name, FBufferObject const* buffer,
+        uint32_t const offset, uint32_t size) {
+    FILAMENT_CHECK_PRECONDITION(buffer) << "Shader storage buffer parameter cannot be null.";
+    FILAMENT_CHECK_PRECONDITION(buffer->getBindingType() == BufferObject::BindingType::SHADER_STORAGE)
+            << "Buffer for shader storage parameter \"" << name << "\" is not SHADER_STORAGE.";
+    FILAMENT_CHECK_PRECONDITION(offset <= buffer->getByteCount())
+            << "Shader storage buffer offset is outside the buffer.";
+
+    if (size == 0) {
+        size = uint32_t(buffer->getByteCount() - offset);
+    }
+    FILAMENT_CHECK_PRECONDITION(size <= buffer->getByteCount() - offset)
+            << "Shader storage buffer range is outside the buffer.";
+
+    mDescriptorSet.setBuffer(mMaterial->getDescriptorSetLayout(), mMaterial->getBufferBinding(name),
+            buffer->getHwHandle(), offset, size);
+}
+
 void FMaterialInstance::setMaskThreshold(float const threshold) noexcept {
     setParameter("_maskThreshold", saturate(threshold));
     mMaskThreshold = saturate(threshold);
@@ -581,7 +611,11 @@ void FMaterialInstance::use(FEngine::DriverApi& driver, Variant variant) const {
         return;
     }
 
-    mDescriptorSet.bind(driver, DescriptorSetBindingPoints::PER_MATERIAL,
+    DescriptorSetBindingPoints const bindingPoint =
+            mMaterial->getMaterialDomain() == MaterialDomain::COMPUTE
+                    ? static_cast<DescriptorSetBindingPoints>(0)
+                    : DescriptorSetBindingPoints::PER_MATERIAL;
+    mDescriptorSet.bind(driver, bindingPoint,
             { { mUboOffset }, driver });
 }
 

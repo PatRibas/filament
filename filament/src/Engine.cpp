@@ -175,6 +175,11 @@ bool Engine::destroy(const MaterialInstance* p) {
     return downcast(this)->destroy(downcast(p));
 }
 
+void Engine::dispatch(const MaterialInstance* materialInstance,
+        math::uint3 const workGroupCount) noexcept {
+    downcast(this)->dispatch(downcast(materialInstance), workGroupCount);
+}
+
 bool Engine::destroy(const Renderer* p) {
     return downcast(this)->destroy(downcast(p));
 }

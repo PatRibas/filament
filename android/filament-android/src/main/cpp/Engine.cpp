@@ -44,6 +44,14 @@ Java_com_google_android_filament_Engine_nDestroyEngine(JNIEnv *env, jclass, jlon
     });
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_Engine_nDispatch(JNIEnv*, jclass, jlong nativeEngine,
+        jlong nativeMaterialInstance, jint x, jint y, jint z) {
+    Engine* engine = (Engine*) nativeEngine;
+    MaterialInstance* materialInstance = (MaterialInstance*) nativeMaterialInstance;
+    engine->dispatch(materialInstance, { uint32_t(x), uint32_t(y), uint32_t(z) });
+}
+
 // SwapChain
 
 extern "C" {

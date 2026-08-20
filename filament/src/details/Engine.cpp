@@ -32,6 +32,7 @@
 #include "details/IndirectLight.h"
 #include "details/InstanceBuffer.h"
 #include "details/Material.h"
+#include "details/MaterialInstance.h"
 #include "details/MorphTargetBuffer.h"
 #include "details/Renderer.h"
 #include "details/Scene.h"
@@ -1428,6 +1429,20 @@ bool FEngine::destroy(const FMaterialInstance* p) {
     }
     // this shouldn't happen, this would be double-free
     return false;
+}
+
+void FEngine::dispatch(const FMaterialInstance* const materialInstance,
+        math::uint3 const workGroupCount) noexcept {
+    FILAMENT_CHECK_PRECONDITION(
+            materialInstance->getMaterial()->getMaterialDomain() == MaterialDomain::COMPUTE)
+            << "Engine::dispatch requires a compute material.";
+
+    DriverApi& driver = getDriverApi();
+    materialInstance->commit(driver, getUboManager());
+    materialInstance->use(driver);
+    Handle<HwProgram> const program = materialInstance->prepareProgram(
+            driver, {}, {}, CompilerPriorityQueue::HIGH);
+    driver.dispatchCompute(program, workGroupCount);
 }
 
 UTILS_NOINLINE

@@ -428,6 +428,7 @@ void MaterialDefinition::processMain() {
 void MaterialDefinition::processParameterNames() {
     size_t const parameterCount = uniformInterfaceBlock.getFieldInfoList().size() +
             samplerInterfaceBlock.getSamplerInfoList().size() +
+            programDescriptorBindings[+DescriptorSetBindingPoints::PER_MATERIAL].size() +
             (subpassInfo.isValid ? 1 : 0);
     parameterNames.reserve(parameterCount);
 
@@ -436,6 +437,13 @@ void MaterialDefinition::processParameterNames() {
     }
     for (auto const& sampler : samplerInterfaceBlock.getSamplerInfoList()) {
         parameterNames.insert({ sampler.name.data(), sampler.name.size() });
+    }
+    for (auto const& descriptor :
+            programDescriptorBindings[+DescriptorSetBindingPoints::PER_MATERIAL]) {
+        if (DescriptorSetLayoutDescriptor::isTexture(descriptor.type) ||
+                descriptor.type == DescriptorType::SHADER_STORAGE_BUFFER) {
+            parameterNames.insert({ descriptor.name.data(), descriptor.name.size() });
+        }
     }
     if (subpassInfo.isValid) {
         parameterNames.insert({ subpassInfo.name.data(), subpassInfo.name.size() });
@@ -742,22 +750,26 @@ Handle<HwProgram> MaterialDefinition::compileProgram(
                     specialization.variant);
             break;
         case MaterialDomain::COMPUTE:
-            // TODO: implement MaterialDomain::COMPUTE
-            PANIC_PRECONDITION("Compute shaders not yet supported");
+            pb = getComputeProgram(engine, parser, specialization);
+            break;
     }
     pb.priorityQueue(priorityQueue);
 
-    // Set descriptor sets for the program.
-    // Note: right now, we're going to assume VSM is disabled. In the future, we
-    // may want to provide both to the backend, so that both can be built.
-    pb.descriptorLayout(+DescriptorSetBindingPoints::PER_VIEW,
-            getPerViewDescriptorSetLayoutDescription(
-                    specialization.variant,
-                    Variant::isShadowSampler2DVariant(specialization.variant)));
-    pb.descriptorLayout(+DescriptorSetBindingPoints::PER_RENDERABLE,
-            descriptor_sets::getPerRenderableLayout());
-    pb.descriptorLayout(
-            +DescriptorSetBindingPoints::PER_MATERIAL, descriptorSetLayoutDescription);
+    if (materialDomain == MaterialDomain::COMPUTE) {
+        pb.descriptorLayout(0, descriptorSetLayoutDescription);
+    } else {
+        // Set descriptor sets for the program.
+        // Note: right now, we're going to assume VSM is disabled. In the future, we
+        // may want to provide both to the backend, so that both can be built.
+        pb.descriptorLayout(+DescriptorSetBindingPoints::PER_VIEW,
+                getPerViewDescriptorSetLayoutDescription(
+                        specialization.variant,
+                        Variant::isShadowSampler2DVariant(specialization.variant)));
+        pb.descriptorLayout(+DescriptorSetBindingPoints::PER_RENDERABLE,
+                descriptor_sets::getPerRenderableLayout());
+        pb.descriptorLayout(
+                +DescriptorSetBindingPoints::PER_MATERIAL, descriptorSetLayoutDescription);
+    }
 
     auto const program = engine.getDriverApi().createProgram(
             std::move(pb), ImmutableCString{name.c_str_safe()});
@@ -782,6 +794,38 @@ Program MaterialDefinition::getSurfaceProgram(FEngine& engine, MaterialParser co
             engine.getConfig().stereoscopicType == StereoscopicType::MULTIVIEW &&
             Variant::isStereoVariant(specialization.variant));
     return pb;
+}
+
+Program MaterialDefinition::getComputeProgram(FEngine const& engine, MaterialParser const& parser,
+        ProgramSpecialization const& specialization) const {
+    ShaderModel const shaderModel = engine.getShaderModel();
+    bool const isNoop = engine.getBackend() == Backend::NOOP;
+    filaflat::ShaderContent& computeBuilder = engine.getFragmentShaderContent();
+
+    UTILS_UNUSED_IN_RELEASE bool const computeOK = parser.getShader(computeBuilder, shaderModel,
+            specialization.variant, ShaderStage::COMPUTE);
+    FILAMENT_CHECK_POSTCONDITION(isNoop || (computeOK && !computeBuilder.empty()))
+            << "The material '" << name.c_str()
+            << "' has not been compiled to include the required GLSL or SPIR-V chunks for the "
+               "compute shader (variant="
+            << specialization.variant << ").";
+
+    Program program;
+    program.shader(ShaderStage::COMPUTE, computeBuilder.data(), computeBuilder.size())
+            .shaderLanguage(parser.getShaderLanguage())
+            .diagnostics(name, [variant = specialization.variant](CString const& name,
+                                  io::ostream& out) -> io::ostream& {
+                return out << name.c_str_safe() << ", variant=" << variant;
+            });
+
+    program.descriptorBindings(0,
+            programDescriptorBindings[+DescriptorSetBindingPoints::PER_MATERIAL]);
+    program.specializationConstants(FixedCapacityVector<Program::SpecializationConstant>(
+            specialization.specializationConstants));
+    program.pushConstants(ShaderStage::COMPUTE,
+            pushConstants[uint8_t(ShaderStage::COMPUTE)]);
+    program.cacheId(hash::combine(size_t(cacheId), specialization.variant.key));
+    return program;
 }
 
 Program MaterialDefinition::getProgramWithVariants(FEngine const& engine,
@@ -930,8 +974,9 @@ bool MaterialDefinition::isValidProgram(Variant const variant, DynamicSpecConstK
             vertexVariant = fragmentVariant = variant;
             break;
         case MaterialDomain::COMPUTE:
-            // TODO: implement MaterialDomain::COMPUTE
-            return false;
+            return mMaterialParser->hasShader(sm, variant, ShaderStage::COMPUTE) &&
+                    DynamicSpecConstKey::isValidProgramSpecKey(variant, specKey, materialDomain,
+                            isVariantLit);
     }
     if (!mMaterialParser->hasShader(sm, vertexVariant, ShaderStage::VERTEX)) {
         return false;
@@ -956,8 +1001,7 @@ Slice<const Variant> MaterialDefinition::getVariants() const noexcept {
         case MaterialDomain::POST_PROCESS:
             return VariantUtils::getPostProcessVariants();
         case MaterialDomain::COMPUTE:
-            // TODO: implement MaterialDomain::COMPUTE
-            PANIC_PRECONDITION("Compute shaders not yet supported");
+            return VariantUtils::getComputeVariants();
     }
 }
 
@@ -968,8 +1012,7 @@ Slice<const Variant> MaterialDefinition::getDepthVariants() const noexcept {
         case MaterialDomain::POST_PROCESS:
             return {};
         case MaterialDomain::COMPUTE:
-            // TODO: implement MaterialDomain::COMPUTE
-            PANIC_PRECONDITION("Compute shaders not yet supported");
+            return {};
     }
 }
 

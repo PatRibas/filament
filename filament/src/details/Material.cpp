@@ -541,6 +541,29 @@ descriptor_binding_t FMaterial::getSamplerBinding(
     return mDefinition.samplerInterfaceBlock.getSamplerInfo(name)->binding;
 }
 
+descriptor_binding_t FMaterial::getImageBinding(std::string_view const name) const {
+    auto const& descriptors =
+            mDefinition.programDescriptorBindings[+DescriptorSetBindingPoints::PER_MATERIAL];
+    auto const pos = std::find_if(descriptors.begin(), descriptors.end(), [name](auto const& entry) {
+        return entry.name == name && DescriptorSetLayoutDescriptor::isTexture(entry.type) &&
+                !DescriptorSetLayoutDescriptor::isSampler(entry.type);
+    });
+    FILAMENT_CHECK_PRECONDITION(pos != descriptors.end())
+            << "Storage image parameter " << name << " does not exist.";
+    return pos->binding;
+}
+
+descriptor_binding_t FMaterial::getBufferBinding(std::string_view const name) const {
+    auto const& descriptors =
+            mDefinition.programDescriptorBindings[+DescriptorSetBindingPoints::PER_MATERIAL];
+    auto const pos = std::find_if(descriptors.begin(), descriptors.end(), [name](auto const& entry) {
+        return entry.name == name && entry.type == DescriptorType::SHADER_STORAGE_BUFFER;
+    });
+    FILAMENT_CHECK_PRECONDITION(pos != descriptors.end())
+            << "Shader storage buffer parameter " << name << " does not exist.";
+    return pos->binding;
+}
+
 const char* FMaterial::getParameterTransformName(std::string_view samplerName) const noexcept {
     auto const& sib = getSamplerInterfaceBlock();
     SamplerInterfaceBlock::SamplerInfo const* info = sib.getSamplerInfo(samplerName);

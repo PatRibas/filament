@@ -203,6 +203,9 @@ export class MaterialInstance {
     public setMat3Parameter(name: string, value: mat4): void;
     public setMat4Parameter(name: string, value: mat3): void;
     public setTextureParameter(name: string, value: Texture, sampler: TextureSampler): void;
+    public setStorageImageParameter(name: string, value: Texture): void;
+    public setStorageBufferParameter(name: string, value: BufferObject,
+        offset: number, size: number): void;
     public setColor3Parameter(name: string, ctype: RgbType, value: float3): void;
     public setColor4Parameter(name: string, ctype: RgbaType, value: float4): void;
     public setPolygonOffset(scale: number, constant: number): void;
@@ -726,6 +729,7 @@ export class Engine {
     public destroyIndexBuffer(indexBuffer: IndexBuffer): void;
     public destroyIndirectLight(indirectLight: IndirectLight): void;
     public destroyMaterialInstance(materialInstance: MaterialInstance): void;
+    public dispatch(materialInstance: MaterialInstance, x: number, y: number, z: number): void;
     public destroyRenderTarget(renderTarget: RenderTarget): void;
     public destroySkybox(skybox: Skybox): void;
     public destroyTexture(texture: Texture): void;
@@ -1009,6 +1013,8 @@ export enum IndexBuffer$IndexType {
 
 export enum BufferObject$BindingType {
     VERTEX,
+    UNIFORM,
+    SHADER_STORAGE,
 }
 
 export enum LightManager$Type {
@@ -1254,6 +1260,7 @@ export const enum TextureUsage {
     UPLOADABLE = 8,
     SAMPLEABLE = 16,
     SUBPASS_INPUT = 32,
+    STORAGE = 1024,
     DEFAULT = UPLOADABLE | SAMPLEABLE,
 }
 
