@@ -56,6 +56,10 @@ getVkTransition(const VulkanLayoutTransition& transition) {
             srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
             srcStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
             break;
+        case VulkanLayout::COMPUTE_IMAGE:
+            srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            break;
         case VulkanLayout::FRAG_READ:
             srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
             srcStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -99,6 +103,10 @@ getVkTransition(const VulkanLayoutTransition& transition) {
         case VulkanLayout::STAGING:
             dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
             dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            break;
+        case VulkanLayout::COMPUTE_IMAGE:
+            dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            dstStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
             break;
         case VulkanLayout::FRAG_READ:
             dstAccessMask = VK_ACCESS_SHADER_READ_BIT;

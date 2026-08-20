@@ -34,6 +34,8 @@ enum class VulkanLayout : uint8_t {
     UNDEFINED,
     // Fragment/vertex shader accessible layout for reading and writing.
     STAGING,
+    // Compute shader accessible layout for reading and writing.
+    COMPUTE_IMAGE,
     // Fragment shader accessible layout for reading only.
     FRAG_READ,
     // Vertex shader accessible layout for reading only.
@@ -69,6 +71,7 @@ constexpr inline VkImageLayout getVkLayout(VulkanLayout layout) {
         case VulkanLayout::UNDEFINED:
             return VK_IMAGE_LAYOUT_UNDEFINED;
         case VulkanLayout::STAGING:
+        case VulkanLayout::COMPUTE_IMAGE:
             return VK_IMAGE_LAYOUT_GENERAL;
         case VulkanLayout::FRAG_READ:
         case VulkanLayout::VERT_READ:

@@ -57,7 +57,8 @@ public:
     }
 
     bool isValid(backend::descriptor_binding_t const binding) const noexcept {
-        return mSamplers[binding] || mUniformBuffers[binding];
+        return mSamplers[binding] || mUniformBuffers[binding] || mStorageBuffers[binding] ||
+                mStorageImages[binding];
     }
 
     bool isSampler(backend::descriptor_binding_t const binding) const noexcept {
@@ -65,7 +66,7 @@ public:
     }
 
     utils::bitset64 getValidDescriptors() const noexcept {
-        return mSamplers | mUniformBuffers;
+        return mSamplers | mUniformBuffers | mStorageBuffers | mStorageImages;
     }
 
     utils::bitset64 getSamplerDescriptors() const noexcept {
@@ -85,6 +86,8 @@ private:
     backend::DescriptorSetLayoutHandle mDescriptorSetLayoutHandle;
     utils::bitset64 mSamplers;
     utils::bitset64 mUniformBuffers;
+    utils::bitset64 mStorageBuffers;
+    utils::bitset64 mStorageImages;
     uint8_t mMaxDescriptorBinding = 0;
     utils::FixedCapacityVector<backend::DescriptorType> mDescriptorTypes;
 };

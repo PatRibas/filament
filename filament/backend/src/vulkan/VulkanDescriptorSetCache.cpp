@@ -71,7 +71,7 @@ public:
           mSize(0),
           mUnusedCount(0) {
         DescriptorCount const actual = mCount * capacity;
-        VkDescriptorPoolSize sizes[4];
+        VkDescriptorPoolSize sizes[6];
         uint8_t npools = 0;
         if (actual.ubo) {
             sizes[npools++] = {
@@ -83,6 +83,18 @@ public:
             sizes[npools++] = {
                 .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
                 .descriptorCount = actual.dynamicUbo,
+            };
+        }
+        if (actual.storageBuffer) {
+            sizes[npools++] = {
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = actual.storageBuffer,
+            };
+        }
+        if (actual.storageImage) {
+            sizes[npools++] = {
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .descriptorCount = actual.storageImage,
             };
         }
         if (actual.sampler) {
@@ -289,7 +301,8 @@ void VulkanDescriptorSetCache::unbind(uint8_t setIndex) {
 }
 
 void VulkanDescriptorSetCache::commit(VulkanCommandBuffer* commands,
-        VkPipelineLayout pipelineLayout, fvkutils::DescriptorSetMask const& setMask) {
+        VkPipelineLayout pipelineLayout, fvkutils::DescriptorSetMask const& setMask,
+        VkPipelineBindPoint const bindPoint) {
     // setMask indicates the set of descriptor sets the driver wants to bind, curMask is the
     // actual set of sets that *needs* to be bound.
     fvkutils::DescriptorSetMask curMask = setMask;
@@ -301,7 +314,7 @@ void VulkanDescriptorSetCache::commit(VulkanCommandBuffer* commands,
         }
     });
 
-    if (mLastBoundInfo.pipelineLayout == pipelineLayout) {
+    if (mLastBoundInfo.pipelineLayout == pipelineLayout && mLastBoundInfo.bindPoint == bindPoint) {
         auto& lastBoundSets = mLastBoundInfo.boundSets;
         curMask.forEachSetBit([&](size_t index) {
             auto& set = updateSets[index];
@@ -317,12 +330,13 @@ void VulkanDescriptorSetCache::commit(VulkanCommandBuffer* commands,
         VkCommandBuffer const cmdbuffer = commands->buffer();
         VkDescriptorSet const vkset = set->getVkSet();
         commands->acquire(set);
-        vkCmdBindDescriptorSets(cmdbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, index,
+        vkCmdBindDescriptorSets(cmdbuffer, bindPoint, pipelineLayout, index,
                 1, &vkset, set->uniqueDynamicUboCount, set->getOffsets()->data());
         set->referencedBy(*commands);
     });
     mLastBoundInfo = {
         pipelineLayout,
+        bindPoint,
         setMask,
         updateSets,
     };
@@ -341,6 +355,8 @@ void VulkanDescriptorSetCache::updateBuffer(fvkmemory::resource_ptr<VulkanDescri
 
     if (set->dynamicUboMask.test(binding)) {
         type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    } else if (set->storageBufferMask.test(binding)) {
+        type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     }
     VkWriteDescriptorSet descriptorWrite = {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -382,6 +398,29 @@ void VulkanDescriptorSetCache::updateSampler(fvkmemory::resource_ptr<VulkanDescr
         .pImageInfo = &info,
     };
     vkUpdateDescriptorSets(mDevice, 1, &descriptorWrite, 0, nullptr);
+    set->mTextureResources[binding] = uint16_t(set->mResources.size());
+    set->mTextureMask.set(binding);
+    set->acquire(texture);
+}
+
+void VulkanDescriptorSetCache::updateStorageImage(fvkmemory::resource_ptr<VulkanDescriptorSet> set,
+        uint8_t const binding, fvkmemory::resource_ptr<VulkanTexture> texture) noexcept {
+    VkImageSubresourceRange const range = texture->getPrimaryViewRange();
+    VkDescriptorImageInfo const info = {
+        .imageView = texture->getView(range),
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    VkWriteDescriptorSet const descriptorWrite = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = set->getVkSet(),
+        .dstBinding = binding,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        .pImageInfo = &info,
+    };
+    vkUpdateDescriptorSets(mDevice, 1, &descriptorWrite, 0, nullptr);
+    set->mTextureResources[binding] = uint16_t(set->mResources.size());
+    set->mTextureMask.set(binding);
     set->acquire(texture);
 }
 

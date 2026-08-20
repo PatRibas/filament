@@ -94,7 +94,7 @@ void DescriptorSet::commitSlow(DescriptorSetLayout const& layout,
             dsh = mDescriptorSetHandle, descriptors = mDescriptors.data()]
             (backend::descriptor_binding_t const binding) {
         assert_invariant(layout.isValid(binding));
-        if (layout.isSampler(binding)) {
+        if (backend::DescriptorSetLayoutDescriptor::isTexture(layout.getDescriptorType(binding))) {
             driver.updateDescriptorSetTexture(dsh, binding,
                     descriptors[binding].texture.th,
                     descriptors[binding].texture.params);
@@ -117,8 +117,13 @@ void DescriptorSet::commitSlow(DescriptorSetLayout const& layout,
         auto const unsetValidDescriptors = layout.getValidDescriptors() & ~mValid;
         if (UTILS_VERY_UNLIKELY(!unsetValidDescriptors.empty() && !mSetUndefinedParameterWarning)) {
             unsetValidDescriptors.forEachSetBit([&](auto i) {
-                LOG(WARNING) << (layout.isSampler(i) ? "Sampler" : "Buffer") << " descriptor " << i
-                        << " of " << mName.c_str() << " is not set. Please report this issue.";
+                backend::DescriptorType const type = layout.getDescriptorType(i);
+                char const* const kind = layout.isSampler(i) ? "Sampler"
+                        : (backend::DescriptorSetLayoutDescriptor::isTexture(type)
+                                ? "Image"
+                                : "Buffer");
+                LOG(WARNING) << kind << " descriptor " << i
+                             << " of " << mName.c_str() << " is not set. Please report this issue.";
             });
             mSetUndefinedParameterWarning = true;
         }
@@ -202,6 +207,22 @@ void DescriptorSet::setSampler(
         mDirty.set(binding);
     }
     mDescriptors[binding].texture = { th, params };
+    mValid.set(binding, bool(th));
+}
+
+void DescriptorSet::setStorageImage(DescriptorSetLayout const& layout,
+        backend::descriptor_binding_t const binding, backend::Handle<backend::HwTexture> th) {
+    using namespace backend;
+    using DSLD = DescriptorSetLayoutDescriptor;
+
+    DescriptorType const type = layout.getDescriptorType(binding);
+    FILAMENT_CHECK_PRECONDITION(DSLD::isTexture(type) && !DSLD::isSampler(type))
+            << "descriptor " << +binding << " is not a storage image";
+
+    if (mDescriptors[binding].texture.th != th) {
+        mDirty.set(binding);
+    }
+    mDescriptors[binding].texture = { th, {} };
     mValid.set(binding, bool(th));
 }
 
@@ -289,6 +310,11 @@ bool DescriptorSet::isTextureCompatibleWithDescriptor(
 
         case DescriptorType::SAMPLER_EXTERNAL:
             return true;
+
+        case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_2D_INT:
+        case DescriptorType::STORAGE_IMAGE_2D_UINT:
+            return false;
 
         case DescriptorType::UNIFORM_BUFFER:
         case DescriptorType::SHADER_STORAGE_BUFFER:

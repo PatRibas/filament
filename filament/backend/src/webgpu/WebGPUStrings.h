@@ -315,6 +315,9 @@ template<typename WebGPUPrintable>
      case DescriptorType::UNIFORM_BUFFER:            return "UNIFORM_BUFFER";
      case DescriptorType::SHADER_STORAGE_BUFFER:     return "SHADER_STORAGE_BUFFER";
      case DescriptorType::INPUT_ATTACHMENT:          return "INPUT_ATTACHMENT";
+     case DescriptorType::STORAGE_IMAGE_2D_FLOAT:    return "STORAGE_IMAGE_2D_FLOAT";
+     case DescriptorType::STORAGE_IMAGE_2D_INT:      return "STORAGE_IMAGE_2D_INT";
+     case DescriptorType::STORAGE_IMAGE_2D_UINT:     return "STORAGE_IMAGE_2D_UINT";
     }
 }
 

@@ -79,7 +79,9 @@ enum_<VertexAttribute>("VertexAttribute")
     .value("MORPH_TANGENTS_3", MORPH_TANGENTS_3);
 
 enum_<BufferObject::BindingType>("BufferObject$BindingType")
-    .value("VERTEX", BufferObject::BindingType::VERTEX);
+    .value("VERTEX", BufferObject::BindingType::VERTEX)
+    .value("UNIFORM", BufferObject::BindingType::UNIFORM)
+    .value("SHADER_STORAGE", BufferObject::BindingType::SHADER_STORAGE);
 
 enum_<VertexBuffer::AttributeType>("VertexBuffer$AttributeType")
     .value("BYTE", VertexBuffer::AttributeType::BYTE)
@@ -286,7 +288,8 @@ enum_<Texture::Usage>("Texture$Usage") // aka backend::TextureUsage
     .value("BLIT_DST", Texture::Usage::BLIT_DST)
     .value("SUBPASS_INPUT", Texture::Usage::SUBPASS_INPUT)
     .value("PROTECTED", Texture::Usage::PROTECTED)
-    .value("GEN_MIPMAPPABLE", Texture::Usage::GEN_MIPMAPPABLE);
+    .value("GEN_MIPMAPPABLE", Texture::Usage::GEN_MIPMAPPABLE)
+    .value("STORAGE", Texture::Usage::STORAGE);
 
 enum_<Texture::CubemapFace>("Texture$CubemapFace") // aka backend::TextureCubemapFace
     .value("POSITIVE_X", Texture::CubemapFace::POSITIVE_X)

@@ -77,6 +77,11 @@ public:
             backend::Handle<backend::HwTexture> th,
             backend::SamplerParams params);
 
+    // sets a storage image descriptor
+    void setStorageImage(DescriptorSetLayout const& layout,
+            backend::descriptor_binding_t binding,
+            backend::Handle<backend::HwTexture> th);
+
     // Used for duplicating material
     DescriptorSet duplicate(utils::StaticString name, DescriptorSetLayout const& layout) const noexcept;
 

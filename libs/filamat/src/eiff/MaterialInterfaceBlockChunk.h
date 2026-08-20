@@ -136,29 +136,29 @@ private:
 // ------------------------------------------------------------------------------------------------
 
 class MaterialDescriptorBindingsChuck final : public Chunk {
-    using Container = filament::SamplerInterfaceBlock;
+    using Container = filament::backend::Program::DescriptorBindingsInfo;
 public:
-    explicit MaterialDescriptorBindingsChuck(Container const& sib) noexcept;
+    explicit MaterialDescriptorBindingsChuck(Container const& bindings) noexcept;
     ~MaterialDescriptorBindingsChuck() override = default;
 
 private:
     void flatten(Flattener&) override;
 
-    Container const& mSamplerInterfaceBlock;
+    Container const& mBindings;
 };
 
 // ------------------------------------------------------------------------------------------------
 
 class MaterialDescriptorSetLayoutChunk final : public Chunk {
-    using Container = filament::SamplerInterfaceBlock;
+    using Container = filament::backend::DescriptorSetLayout;
 public:
-    explicit MaterialDescriptorSetLayoutChunk(Container const& sib) noexcept;
+    explicit MaterialDescriptorSetLayoutChunk(Container const& layout) noexcept;
     ~MaterialDescriptorSetLayoutChunk() override = default;
 
 private:
     void flatten(Flattener&) override;
 
-    Container const& mSamplerInterfaceBlock;
+    Container const& mLayout;
 };
 
 } // namespace filamat
