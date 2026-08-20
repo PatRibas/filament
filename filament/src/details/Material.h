@@ -189,6 +189,8 @@ public:
 
     backend::descriptor_binding_t getSamplerBinding(
             std::string_view const& name) const;
+    backend::descriptor_binding_t getImageBinding(std::string_view name) const;
+    backend::descriptor_binding_t getBufferBinding(std::string_view name) const;
 
     const char* getParameterTransformName(std::string_view samplerName) const noexcept;
 

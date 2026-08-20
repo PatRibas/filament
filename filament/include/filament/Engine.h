@@ -29,6 +29,8 @@
 #include <utils/Slice.h>
 #include <utils/tribool.h>
 
+#include <math/vec3.h>
+
 #include <functional>
 #include <initializer_list>
 #include <optional>
@@ -985,6 +987,17 @@ public:
      */
     bool destroy(const Material* UTILS_NULLABLE p);
     bool destroy(const MaterialInstance* UTILS_NULLABLE p); //!< Destroys a MaterialInstance object.
+
+    /**
+     * Dispatches a compute material instance.
+     *
+     * @param materialInstance The compute material instance to dispatch.
+     * @param workGroupCount Number of work groups to execute along each axis.
+     * @throws utils::PreConditionPanic if materialInstance does not belong to a compute material.
+     */
+    void dispatch(const MaterialInstance* UTILS_NONNULL materialInstance,
+            math::uint3 workGroupCount) noexcept;
+
     bool destroy(const Renderer* UTILS_NULLABLE p);         //!< Destroys a Renderer object.
     bool destroy(const Scene* UTILS_NULLABLE p);            //!< Destroys a Scene object.
     bool destroy(const Skybox* UTILS_NULLABLE p);           //!< Destroys a SkyBox object.
