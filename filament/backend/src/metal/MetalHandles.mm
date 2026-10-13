@@ -17,21 +17,21 @@
 #include "MetalHandles.h"
 
 #include "MetalBlitter.h"
-#include "MetalEnums.h"
-#include "MetalUtils.h"
 #include "MetalBufferPool.h"
 #include "MetalDriver.h"
+#include "MetalEnums.h"
+#include "MetalUtils.h"
 
 #include <filament/SwapChain.h>
 
+#include <private/backend/BackendUtils.h>
+
 #include <backend/DriverEnums.h>
 
-#include "private/backend/BackendUtils.h"
-
-#include <utils/Logger.h>
-#include <utils/Panic.h>
 #include <utils/compiler.h>
 #include <utils/debug.h>
+#include <utils/Logger.h>
+#include <utils/Panic.h>
 #include <utils/trap.h>
 
 #include <math/scalar.h>
@@ -105,6 +105,9 @@ static inline MTLTextureUsage getMetalTextureUsage(TextureUsage usage) {
     }
     if (any(usage & TextureUsage::GEN_MIPMAPPABLE)) {
         u |= (MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead);
+    }
+    if (any(usage & TextureUsage::STORAGE)) {
+        u |= (MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
     }
 
     return MTLTextureUsage(u);
@@ -656,6 +659,26 @@ const MetalShaderCompiler::MetalFunctionBundle& MetalProgram::getFunctions() {
 
 const MetalShaderCompiler::MetalFunctionBundle& MetalProgram::getFunctionsIfPresent() const {
     return mFunctionBundle;
+}
+
+id<MTLComputePipelineState> MetalProgram::getOrCreateComputePipelineState() {
+    if (mComputePipelineState) {
+        return mComputePipelineState;
+    }
+    auto const& functions = getFunctions();
+    auto compute = functions.getComputeFunction();
+    assert_invariant(compute);
+    NSError* error = nil;
+    mComputePipelineState =
+            [mContext.device newComputePipelineStateWithFunction:compute
+                                                           error:&error];
+    if (error) {
+        auto description = [error.localizedDescription cStringUsingEncoding:NSUTF8StringEncoding];
+        LOG(ERROR) << description;
+    }
+    FILAMENT_CHECK_POSTCONDITION(mComputePipelineState != nil)
+            << "Unable to create Metal compute pipeline state.";
+    return mComputePipelineState;
 }
 
 void MetalProgram::initialize() {
@@ -1520,7 +1543,10 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                 MTLArgumentDescriptor* bufferArgument = [MTLArgumentDescriptor argumentDescriptor];
                 bufferArgument.index = binding.binding * 2;
                 bufferArgument.dataType = MTLDataTypePointer;
-                bufferArgument.access = MTLArgumentAccessReadOnly;
+                bufferArgument.access = (binding.type == DescriptorType::SHADER_STORAGE_BUFFER &&
+                                                stage == ShaderStage::COMPUTE)
+                        ? MTLArgumentAccessReadWrite
+                        : MTLArgumentAccessReadOnly;
                 [arguments addObject:bufferArgument];
                 break;
             }
@@ -1574,9 +1600,15 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                 break;
             case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
             case DescriptorType::STORAGE_IMAGE_2D_INT:
-            case DescriptorType::STORAGE_IMAGE_2D_UINT:
-                // Storage images are currently implemented only by the Vulkan backend.
+            case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+                MTLArgumentDescriptor* textureArgument = [MTLArgumentDescriptor argumentDescriptor];
+                textureArgument.index = binding.binding * 2;
+                textureArgument.dataType = MTLDataTypeTexture;
+                textureArgument.textureType = MTLTextureType2D;
+                textureArgument.access = MTLArgumentAccessWriteOnly;
+                [arguments addObject:textureArgument];
                 break;
+            }
         }
     }
     if (arguments.count == 0) {
@@ -1614,6 +1646,24 @@ void MetalDescriptorSet::finalize(MetalDriver* driver) {
     }
 }
 
+void MetalDescriptorSet::finalizeCompute(
+        MetalDriver* driver, id<MTLComputeCommandEncoder> computeEncoder) {
+    [computeEncoder useResource:driver->mContext->emptyBuffer
+                          usage:MTLResourceUsageRead];
+    [computeEncoder useResource:getOrCreateEmptyTexture(driver->mContext)
+                          usage:MTLResourceUsageRead];
+    if (!computeReadResources.empty()) {
+        [computeEncoder useResources:computeReadResources.data()
+                               count:computeReadResources.size()
+                               usage:MTLResourceUsageRead];
+    }
+    if (!computeReadWriteResources.empty()) {
+        [computeEncoder useResources:computeReadWriteResources.data()
+                               count:computeReadWriteResources.size()
+                               usage:MTLResourceUsageRead | MTLResourceUsageWrite];
+    }
+}
+
 id<MTLBuffer> MetalDescriptorSet::finalizeAndGetBuffer(MetalDriver* driver, ShaderStage stage) {
     auto const index = static_cast<size_t>(stage);
     assert_invariant(index < cachedBuffer.size());
@@ -1627,7 +1677,8 @@ id<MTLBuffer> MetalDescriptorSet::finalizeAndGetBuffer(MetalDriver* driver, Shad
     auto const& bindings = layout->getBindings();
     auto textureTypes = utils::FixedCapacityVector<MTLTextureType>::with_capacity(bindings.size());
     for (auto const& binding : bindings) {
-        if (!hasShaderType(binding.stageFlags, stage)) {
+        if (!hasShaderType(binding.stageFlags, stage) ||
+                !DescriptorSetLayoutDescriptor::isSampler(binding.type)) {
             continue;
         }
         MTLTextureType textureType = MTLTextureType2D;
@@ -1728,9 +1779,17 @@ id<MTLBuffer> MetalDescriptorSet::finalizeAndGetBuffer(MetalDriver* driver, Shad
                 break;
             case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
             case DescriptorType::STORAGE_IMAGE_2D_INT:
-            case DescriptorType::STORAGE_IMAGE_2D_UINT:
-                // Storage images are currently implemented only by the Vulkan backend.
+            case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+                auto found = textures.find(binding.binding);
+                if (found == textures.end()) {
+                    [encoder setTexture:getOrCreateEmptyTexture(driver->mContext)
+                                atIndex:binding.binding * 2];
+                    continue;
+                }
+                auto const& textureBinding = textures[binding.binding];
+                [encoder setTexture:textureBinding.texture atIndex:binding.binding * 2];
                 break;
+            }
         }
     }
 

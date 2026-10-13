@@ -54,8 +54,19 @@ MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::sampler(
 }
 
 MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::buffer(
-        size_t index, const std::string& type, const std::string& name) noexcept {
-    mArguments.emplace_back(BufferArgument { name, index, type });
+        size_t index, const std::string& type, const std::string& name,
+        AddressSpace addressSpace) noexcept {
+    mArguments.emplace_back(BufferArgument { name, index, type, addressSpace });
+    return *this;
+}
+
+MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::image(
+        size_t index, const std::string& name,
+        filament::backend::DescriptorType type) noexcept {
+    assert_invariant(type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
+                     type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_INT ||
+                     type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_UINT);
+    mArguments.emplace_back(ImageArgument { name, index, type });
     return *this;
 }
 
@@ -122,7 +133,38 @@ std::ostream& MetalArgumentBuffer::Builder::SamplerArgument::write(std::ostream&
 }
 
 std::ostream& MetalArgumentBuffer::Builder::BufferArgument::write(std::ostream& os) const {
-    os << "constant " << type << "* " << name << " [[id(" << index << ")]];" << std::endl;
+    switch (addressSpace) {
+        case AddressSpace::CONSTANT:
+            os << "constant ";
+            break;
+        case AddressSpace::DEVICE:
+            os << "device ";
+            break;
+        case AddressSpace::CONST_DEVICE:
+            os << "const device ";
+            break;
+    }
+    os << type << "* " << name << " [[id(" << index << ")]];" << std::endl;
+    return os;
+}
+
+std::ostream& MetalArgumentBuffer::Builder::ImageArgument::write(std::ostream& os) const {
+    os << "texture2d<";
+    switch (type) {
+        case filament::backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+            os << "float";
+            break;
+        case filament::backend::DescriptorType::STORAGE_IMAGE_2D_INT:
+            os << "int";
+            break;
+        case filament::backend::DescriptorType::STORAGE_IMAGE_2D_UINT:
+            os << "uint";
+            break;
+        default:
+            assert_invariant(false);
+            break;
+    }
+    os << ", access::write> " << name << " [[id(" << index << ")]];" << std::endl;
     return os;
 }
 

@@ -712,7 +712,7 @@ if (FILAMENT_BUILD_TESTING)
     # ==================================================================================================
     # Compute tests
     #
-    if (LINUX)
+    if (LINUX OR (APPLE AND NOT IOS))
         add_executable(compute_test
                 test/ComputeTest.cpp
                 test/Arguments.cpp
@@ -721,6 +721,7 @@ if (FILAMENT_BUILD_TESTING)
 
         target_link_libraries(compute_test PRIVATE
                 backend
+                filamat
                 gtest
                 glslang
                 SPIRV

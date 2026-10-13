@@ -24,7 +24,10 @@
 #include <utils/Logger.h>
 #include <utils/Mutex.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <string_view>
 
 namespace filament::backend {
 
@@ -96,9 +99,30 @@ bool MetalShaderCompiler::isParallelShaderCompileSupported() const noexcept {
     return mMode == Mode::ASYNCHRONOUS;
 }
 
+static MTLSize parseWorkGroupSize(const char* source, size_t length) noexcept {
+    std::string_view const view(source, length);
+    constexpr std::string_view token = "gl_WorkGroupSize";
+    size_t pos = view.find(token);
+    if (pos == std::string_view::npos) {
+        return MTLSizeMake(1u, 1u, 1u);
+    }
+    pos = view.find("uint3(", pos + token.size());
+    if (pos == std::string_view::npos) {
+        return MTLSizeMake(1u, 1u, 1u);
+    }
+    pos += 6; // skip "uint3("
+    unsigned int x = 1u, y = 1u, z = 1u;
+    if (std::sscanf(source + pos, "%uu, %uu, %uu", &x, &y, &z) == 3 ||
+            std::sscanf(source + pos, "%u, %u, %u", &x, &y, &z) == 3) {
+        return MTLSizeMake(std::max(1u, x), std::max(1u, y), std::max(1u, z));
+    }
+    return MTLSizeMake(1u, 1u, 1u);
+}
+
 /* static */ MetalShaderCompiler::MetalFunctionBundle MetalShaderCompiler::compileProgram(
         const Program& program, id<MTLDevice> device) {
     std::array<id<MTLFunction>, Program::SHADER_TYPE_COUNT> functions = { nil };
+    MTLSize computeThreadsPerThreadgroup = MTLSizeMake(1u, 1u, 1u);
     const auto& sources = program.getShadersSource();
     for (size_t i = 0; i < Program::SHADER_TYPE_COUNT; i++) {
         const auto& source = sources[i];
@@ -116,6 +140,10 @@ bool MetalShaderCompiler::isParallelShaderCompileSupported() const noexcept {
                 options.fastMathEnabled = YES;
 
                 assert_invariant(source[source.size() - 1] == '\0');
+                if (static_cast<ShaderStage>(i) == ShaderStage::COMPUTE) {
+                    computeThreadsPerThreadgroup = parseWorkGroupSize(
+                            reinterpret_cast<const char*>(source.data()), source.size() - 1);
+                }
                 // the shader string is null terminated and the length includes the null character
                 NSString* objcSource = [[NSString alloc] initWithBytes:source.data()
                                                                 length:source.size() - 1
@@ -206,7 +234,7 @@ bool MetalShaderCompiler::isParallelShaderCompileSupported() const noexcept {
     }
 
     if (isComputeProgram) {
-        return MetalFunctionBundle::compute(computeFunction);
+        return MetalFunctionBundle::compute(computeFunction, computeThreadsPerThreadgroup);
     }
 
     // Should never reach here.

@@ -28,6 +28,11 @@ namespace filamat {
 
 class MetalArgumentBuffer {
 public:
+    enum class AddressSpace : uint8_t {
+        CONSTANT,
+        DEVICE,
+        CONST_DEVICE,
+    };
 
     class Builder {
     public:
@@ -63,8 +68,19 @@ public:
          * @param index the [[id(n)]] index of the buffer argument
          * @param type the type of data the buffer points to
          * @param name the name of the buffer argument
+         * @param addressSpace the Metal address space of the buffer pointer
          */
-        Builder& buffer(size_t index, const std::string& type, const std::string& name) noexcept;
+        Builder& buffer(size_t index, const std::string& type, const std::string& name,
+                AddressSpace addressSpace = AddressSpace::CONSTANT) noexcept;
+
+        /**
+         * Add a storage image argument to the argument buffer structure.
+         * @param index the [[id(n)]] index of the image argument
+         * @param name the name of the image argument
+         * @param type the storage image descriptor type
+         */
+        Builder& image(size_t index, const std::string& name,
+                filament::backend::DescriptorType type) noexcept;
 
         MetalArgumentBuffer* build();
 
@@ -94,11 +110,21 @@ public:
             std::string name;
             size_t index;
             std::string type;
+            AddressSpace addressSpace;
 
             std::ostream& write(std::ostream& os) const;
         };
 
-        using ArgumentType = std::variant<TextureArgument, SamplerArgument, BufferArgument>;
+        struct ImageArgument {
+            std::string name;
+            size_t index;
+            filament::backend::DescriptorType type;
+
+            std::ostream& write(std::ostream& os) const;
+        };
+
+        using ArgumentType = std::variant<
+                TextureArgument, SamplerArgument, BufferArgument, ImageArgument>;
         std::vector<ArgumentType> mArguments;
     };
 

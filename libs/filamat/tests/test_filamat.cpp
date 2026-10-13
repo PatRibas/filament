@@ -19,6 +19,8 @@
 
 #include "shaders/ShaderGenerator.h"
 
+#include <private/filament/BufferInterfaceBlock.h>
+
 #include <filamat/Enums.h>
 #include <filamat/MaterialBuilder.h>
 
@@ -1200,6 +1202,67 @@ TEST_F(MaterialCompiler, WgslConversionSandboxLitTransparent) {
     EXPECT_TRUE(result.isValid());
 }
 #endif
+
+TEST_F(MaterialCompiler, ComputeMaterialMetal) {
+    const std::string computeCode(R"(
+        void compute() {
+            uint idx = gl_GlobalInvocationID.x;
+            data.values[idx] = vec4(materialParams.dt);
+            imageStore(outputImage, ivec2(gl_GlobalInvocationID.xy), data.values[idx]);
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeMaterialMetal");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.targetApi(MaterialBuilderBase::TargetApi::METAL);
+    builder.groupSize({ 8, 8, 1 });
+    builder.parameter("dt", UniformType::FLOAT);
+    builder.image("outputImage", "rgba8");
+    builder.buffer(filament::BufferInterfaceBlock::Builder()
+            .name("Data")
+            .target(filament::BufferInterfaceBlock::Target::SSBO)
+            .alignment(filament::BufferInterfaceBlock::Alignment::std430)
+            .addVariableSizedArray({ "values", 0, UniformType::FLOAT4, Precision::HIGH })
+            .build());
+    builder.material(computeCode.c_str());
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, SurfaceMaterialWithSsboMetal) {
+    const std::string vertexCode(R"(
+        void materialVertex(inout MaterialVertexInputs material) {
+            uint idx = uint(getInstanceIndex());
+            material.worldPosition = data.values[idx];
+        }
+    )");
+    const std::string fragmentCode(R"(
+        void material(inout MaterialInputs material) {
+            prepareMaterial(material);
+            material.baseColor = data.values[0];
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("SurfaceMaterialWithSsboMetal");
+    builder.targetApi(MaterialBuilderBase::TargetApi::METAL);
+    builder.featureLevel(FeatureLevel::FEATURE_LEVEL_2);
+    builder.instanced(true);
+    builder.buffer(filament::BufferInterfaceBlock::Builder()
+            .name("Data")
+            .target(filament::BufferInterfaceBlock::Target::SSBO)
+            .alignment(filament::BufferInterfaceBlock::Alignment::std430)
+            .qualifier(filament::BufferInterfaceBlock::Qualifier::READONLY)
+            .addVariableSizedArray({ "values", 0, UniformType::FLOAT4, Precision::HIGH })
+            .build());
+    builder.materialVertex(vertexCode.c_str());
+    builder.material(fragmentCode.c_str());
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -400,12 +400,25 @@ void MetalDriver::updateDescriptorSetBuffer(
     auto* bo = handle_cast<MetalBufferObject>(boh);
     id<MTLBuffer> mtlBuffer = bo->getBuffer()->getGpuBufferForDraw();
     descriptorSet->buffers[binding] = { mtlBuffer, offset, size };
-    ShaderStageFlags stageFlags = descriptorSet->layout->getBindings()[binding].stageFlags;
+
+    auto const& bindings = descriptorSet->layout->getBindings();
+    auto found = std::find_if(bindings.begin(), bindings.end(),
+            [binding](const auto& b) { return b.binding == binding; });
+    assert_invariant(found != bindings.end());
+
+    ShaderStageFlags stageFlags = found->stageFlags;
     if (any(stageFlags & ShaderStageFlags::VERTEX)) {
         descriptorSet->vertexResources.push_back(mtlBuffer);
     }
     if (any(stageFlags & ShaderStageFlags::FRAGMENT)) {
         descriptorSet->fragmentResources.push_back(mtlBuffer);
+    }
+    if (any(stageFlags & ShaderStageFlags::COMPUTE)) {
+        if (found->type == DescriptorType::SHADER_STORAGE_BUFFER) {
+            descriptorSet->computeReadWriteResources.push_back(mtlBuffer);
+        } else {
+            descriptorSet->computeReadResources.push_back(mtlBuffer);
+        }
     }
 }
 
@@ -422,7 +435,14 @@ void MetalDriver::updateDescriptorSetTexture(
     auto* descriptorSet = handle_cast<MetalDescriptorSet>(dsh);
     auto* texture = handle_cast<MetalTexture>(th);
 
-    id<MTLTexture> mtlTexture = texture->getMtlTextureForRead();
+    auto const& bindings = descriptorSet->layout->getBindings();
+    auto found = std::find_if(bindings.begin(), bindings.end(),
+            [binding](const auto& b) { return b.binding == binding; });
+    assert_invariant(found != bindings.end());
+
+    const bool isStorageImage = !DescriptorSetLayoutDescriptor::isSampler(found->type);
+    id<MTLTexture> mtlTexture =
+            isStorageImage ? texture->getMtlTextureForWrite() : texture->getMtlTextureForRead();
     if (texture->target == SamplerType::SAMPLER_EXTERNAL) {
         auto externalImage = texture->getExternalImage();
         assert_invariant(externalImage != nil);
@@ -432,17 +452,19 @@ void MetalDriver::updateDescriptorSetTexture(
 
     descriptorSet->textures[binding] = MetalDescriptorSet::TextureBinding { mtlTexture, params };
 
-    auto const& bindings = descriptorSet->layout->getBindings();
-    auto found = std::find_if(bindings.begin(), bindings.end(),
-            [binding](const auto& b) { return b.binding == binding; });
-    assert_invariant(found != bindings.end());
-
     ShaderStageFlags stageFlags = found->stageFlags;
     if (any(stageFlags & ShaderStageFlags::VERTEX)) {
         descriptorSet->vertexResources.push_back(mtlTexture);
     }
     if (any(stageFlags & ShaderStageFlags::FRAGMENT)) {
         descriptorSet->fragmentResources.push_back(mtlTexture);
+    }
+    if (any(stageFlags & ShaderStageFlags::COMPUTE)) {
+        if (isStorageImage) {
+            descriptorSet->computeReadWriteResources.push_back(mtlTexture);
+        } else {
+            descriptorSet->computeReadResources.push_back(mtlTexture);
+        }
     }
 }
 
@@ -903,6 +925,9 @@ const char* toString(DescriptorType type) {
         DESCRIPTOR_TYPE_CASE(UNIFORM_BUFFER)
         DESCRIPTOR_TYPE_CASE(SHADER_STORAGE_BUFFER)
         DESCRIPTOR_TYPE_CASE(INPUT_ATTACHMENT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_FLOAT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_INT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_UINT)
     }
 #undef DESCRIPTOR_TYPE_CASE
     return "UNKNOWN";
@@ -1822,9 +1847,8 @@ void MetalDriver::beginRenderPass(Handle<HwRenderTarget> rth,
     mContext->fragmentDescriptorBindings.bindBuffers(
             mContext->currentRenderPassEncoder, DESCRIPTOR_SET_BINDING_START);
 
-    for (auto& pc : mContext->currentPushConstants) {
-        pc.clear();
-    }
+    mContext->currentPushConstants[static_cast<size_t>(ShaderStage::VERTEX)].clear();
+    mContext->currentPushConstants[static_cast<size_t>(ShaderStage::FRAGMENT)].clear();
 }
 
 void MetalDriver::nextSubpass(int dummy) {}
@@ -1891,10 +1915,10 @@ void MetalDriver::commit(Handle<HwSwapChain> sch) {
 
 void MetalDriver::setPushConstant(backend::ShaderStage stage, uint8_t index,
         backend::PushConstantVariant value) {
-    if (UTILS_UNLIKELY(mContext->currentRenderPassAbandoned)) {
+    if (UTILS_UNLIKELY(mContext->currentRenderPassAbandoned && stage != ShaderStage::COMPUTE)) {
         return;
     }
-    FILAMENT_CHECK_PRECONDITION(isInRenderPass(mContext))
+    FILAMENT_CHECK_PRECONDITION(stage == ShaderStage::COMPUTE || isInRenderPass(mContext))
             << "setPushConstant must be called inside a render pass.";
     assert_invariant(static_cast<size_t>(stage) < mContext->currentPushConstants.size());
     MetalPushConstantBuffer& pushConstants =
@@ -2053,8 +2077,35 @@ void MetalDriver::readTextureCommon(id<MTLTexture> srcTexture, uint8_t level, ui
 
 void MetalDriver::readBufferSubData(backend::BufferObjectHandle boh,
         uint32_t offset, uint32_t size, backend::BufferDescriptor&& p) {
-    // TODO: implement readBufferSubData
-    scheduleDestroy(std::move(p));
+    FILAMENT_CHECK_PRECONDITION(!isInRenderPass(mContext))
+            << "readBufferSubData must be called outside of a render pass.";
+
+    auto* bo = handle_cast<MetalBufferObject>(boh);
+    id<MTLBuffer> srcBuffer = bo->getBuffer()->getGpuBufferForDraw();
+    assert_invariant(srcBuffer != nil);
+    FILAMENT_CHECK_PRECONDITION(offset + size <= srcBuffer.length)
+            << "readBufferSubData out of bounds.";
+
+    id<MTLBuffer> readBuffer = [mContext->device newBufferWithLength:size
+                                                             options:MTLResourceStorageModeShared];
+    id<MTLCommandBuffer> cmdBuffer = getPendingCommandBuffer(mContext);
+    id<MTLBlitCommandEncoder> blitEncoder = [cmdBuffer blitCommandEncoder];
+    blitEncoder.label = @"readBufferSubData blit";
+    [blitEncoder copyFromBuffer:srcBuffer
+                   sourceOffset:offset
+                       toBuffer:readBuffer
+              destinationOffset:0
+                           size:size];
+    [blitEncoder endEncoding];
+
+    BufferDescriptor* bd = new BufferDescriptor(std::move(p));
+    [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
+        if (bd->buffer && size > 0) {
+            memcpy(bd->buffer, readBuffer.contents, std::min(static_cast<size_t>(size), bd->size));
+        }
+        scheduleDestroy(std::move(*bd));
+        delete bd;
+    }];
 }
 
 void MetalDriver::resolve(
@@ -2438,6 +2489,7 @@ void MetalDriver::bindDescriptorSet(
         mContext->currentDescriptorSets[set] = nullptr;
         mContext->vertexDescriptorBindings.setBuffer(nil, 0, set);
         mContext->fragmentDescriptorBindings.setBuffer(nil, 0, set);
+        mContext->computeDescriptorBindings.setBuffer(nil, 0, set);
         mContext->dynamicOffsets.setOffsets(set, nullptr, 0);
         return;
     }
@@ -2464,6 +2516,8 @@ void MetalDriver::bindDescriptorSet(
             descriptorSet->finalizeAndGetBuffer(this, ShaderStage::VERTEX), 0, set);
     mContext->fragmentDescriptorBindings.setBuffer(
             descriptorSet->finalizeAndGetBuffer(this, ShaderStage::FRAGMENT), 0, set);
+    mContext->computeDescriptorBindings.setBuffer(
+            descriptorSet->finalizeAndGetBuffer(this, ShaderStage::COMPUTE), 0, set);
     mContext->dynamicOffsets.setOffsets(set, offsets.data(), dynamicBindings);
 
     // If we're inside a render pass, we should also finalize the descriptor set and update the
@@ -2592,7 +2646,7 @@ void MetalDriver::dispatchCompute(Handle<HwProgram> program, math::uint3 workGro
     auto mtlProgram = handle_cast<MetalProgram>(program);
 
     // This might block until the shader compilation has finished.
-    auto functions = mtlProgram->getFunctions();
+    auto const& functions = mtlProgram->getFunctions();
 
     // If the material debugger is enabled, avoid fatal (or cascading) errors and that can occur
     // during the draw call when the program is invalid. The shader compile error has already been
@@ -2601,29 +2655,51 @@ void MetalDriver::dispatchCompute(Handle<HwProgram> program, math::uint3 workGro
         return;
     }
 
-    auto compute = functions.getComputeFunction();
+    functions.validate();
 
-    assert_invariant(bool(functions) && compute);
+    MTLSize threadsPerThreadgroup = functions.getComputeThreadsPerThreadgroup();
+
+    assert_invariant(bool(functions) && functions.getComputeFunction());
+
+    id<MTLComputePipelineState> computePipelineState =
+            mtlProgram->getOrCreateComputePipelineState();
 
     id<MTLComputeCommandEncoder> computeEncoder =
             [getPendingCommandBuffer(mContext) computeCommandEncoder];
-
-    NSError* error = nil;
-    id<MTLComputePipelineState> computePipelineState =
-            [mContext->device newComputePipelineStateWithFunction:compute
-                                                            error:&error];
-    if (error) {
-        auto description = [error.localizedDescription cStringUsingEncoding:NSUTF8StringEncoding];
-        LOG(ERROR) << description;
+    if (!mContext->groupMarkers.empty()) {
+        computeEncoder.label =
+                [NSString stringWithCString:mContext->groupMarkers.top()
+                                   encoding:NSUTF8StringEncoding];
     }
-    FILAMENT_CHECK_POSTCONDITION(computePipelineState != nil)
-            << "Unable to create Metal compute pipeline state.";
 
     [computeEncoder setComputePipelineState:computePipelineState];
 
+    for (size_t i = 0; i < MAX_DESCRIPTOR_SET_COUNT; i++) {
+        auto* descriptorSet = mContext->currentDescriptorSets[i];
+        if (!descriptorSet) {
+            continue;
+        }
+        descriptorSet->finalizeCompute(this, computeEncoder);
+    }
+
+    mContext->computeDescriptorBindings.invalidate();
+    mContext->computeDescriptorBindings.bindBuffers(
+            computeEncoder, DESCRIPTOR_SET_BINDING_START);
+
+    const auto [size, data] = mContext->dynamicOffsets.getOffsets();
+    if (size > 0) {
+        [computeEncoder setBytes:data
+                          length:size * sizeof(uint32_t)
+                         atIndex:DYNAMIC_OFFSET_BINDING];
+    }
+
+    auto& pushConstants =
+            mContext->currentPushConstants[static_cast<size_t>(ShaderStage::COMPUTE)];
+    if (UTILS_UNLIKELY(pushConstants.isDirty())) {
+        pushConstants.setBytes(computeEncoder, ShaderStage::COMPUTE);
+    }
+
     MTLSize threadgroupsPerGrid = MTLSizeMake(workGroupCount.x, workGroupCount.y, workGroupCount.z);
-    // FIXME: the threadgroup size should be specified in the Program
-    MTLSize threadsPerThreadgroup = MTLSizeMake(16u, 1u, 1u);
     [computeEncoder dispatchThreadgroups:threadgroupsPerGrid
                    threadsPerThreadgroup:threadsPerThreadgroup];
 

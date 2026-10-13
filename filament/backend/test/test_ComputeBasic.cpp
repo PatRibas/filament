@@ -14,18 +14,24 @@
  * limitations under the License.
  */
 
+#include "builtinResource.h"
 #include "ComputeTest.h"
 
-#include "builtinResource.h"
+#include "../src/GLSLPostProcessor.h"
 
+#include <backend/BufferDescriptor.h>
 #include <backend/DriverEnums.h>
+#include <backend/PixelBufferDescriptor.h>
 #include <backend/Program.h>
 
+#include <utils/CString.h>
 #include <utils/FixedCapacityVector.h>
 
-#include <GlslangToSpv.h>
 #include <glslang/Public/ShaderLang.h>
+#include <GlslangToSpv.h>
 
+#include <optional>
+#include <string>
 #include <vector>
 
 using namespace filament;
@@ -33,7 +39,8 @@ using namespace filament::backend;
 
 namespace {
 
-Program createComputeProgram(const char* shaderSource) {
+Program createComputeProgram(const char* shaderSource, Backend backend = Backend::VULKAN,
+        bool isMobile = false, const DescriptorSetLayout& set0Layout = {}) {
     glslang::TProgram glslangProgram;
     glslang::TShader glslangShader(EShLangCompute);
     glslangShader.setStrings(&shaderSource, 1);
@@ -52,6 +59,23 @@ Program createComputeProgram(const char* shaderSource) {
 
     std::vector<uint32_t> spirv;
     glslang::GlslangToSpv(*glslangProgram.getIntermediate(EShLangCompute), spirv);
+
+    if (backend == Backend::METAL) {
+        filamat::DescriptorSets descriptors;
+        descriptors[0].reserve(set0Layout.descriptors.size());
+        for (auto const& d : set0Layout.descriptors) {
+            std::string const dummyName = "Resource" + std::to_string(d.binding);
+            descriptors[0].push_back({ utils::CString(dummyName.c_str()), d, std::nullopt });
+        }
+        std::string msl;
+        ShaderModel const sm = isMobile ? ShaderModel::MOBILE : ShaderModel::DESKTOP;
+        filamat::GLSLPostProcessor::spirvToMsl(
+                &spirv, &msl, ShaderStage::COMPUTE, sm, false, descriptors, nullptr);
+        Program program;
+        program.shaderLanguage(ShaderLanguage::MSL);
+        program.shader(ShaderStage::COMPUTE, msl.data(), msl.size() + 1);
+        return program;
+    }
 
     Program program;
     program.shaderLanguage(ShaderLanguage::SPIRV);
@@ -94,7 +118,7 @@ TEST_F(ComputeTest, dispatchesComputeProgram) {
 #version 450
 layout(local_size_x = 16) in;
 void main() {}
-)"));
+)", getBackend(), isMobile()));
 
     driver.dispatchCompute(program, { 1, 1, 1 });
     driver.destroyProgram(program);
@@ -107,17 +131,20 @@ TEST_F(ComputeTest, bindsStorageBuffersForCompute) {
     auto& driver = getDriverApi();
     constexpr uint32_t GROUP_SIZE = 16;
     constexpr uint32_t GROUP_COUNT = 32;
-    constexpr uint32_t BUFFER_SIZE = GROUP_SIZE * GROUP_COUNT * sizeof(float);
+    constexpr uint32_t ELEMENT_COUNT = GROUP_SIZE * GROUP_COUNT;
+    constexpr uint32_t BUFFER_SIZE = ELEMENT_COUNT * sizeof(float);
 
-    std::vector<float> input(GROUP_SIZE * GROUP_COUNT, 1.0f);
+    std::vector<float> input(ELEMENT_COUNT, 1.0f);
+    std::vector<float> readback(ELEMENT_COUNT, 0.0f);
     BufferObjectHandle const output = driver.createBufferObject(BUFFER_SIZE,
             BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
     BufferObjectHandle const inputBuffer = driver.createBufferObject(BUFFER_SIZE,
             BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
     driver.updateBufferObject(inputBuffer, { input.data(), BUFFER_SIZE }, 0);
 
-    DescriptorSetLayoutHandle const layout = driver.createDescriptorSetLayout(
-            createStorageBufferLayout());
+    DescriptorSetLayout const set0Layout = createStorageBufferLayout();
+    DescriptorSetLayoutHandle const layout =
+            driver.createDescriptorSetLayout(createStorageBufferLayout());
     DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
     driver.updateDescriptorSetBuffer(descriptorSet, 0, output, 0, BUFFER_SIZE);
     driver.updateDescriptorSetBuffer(descriptorSet, 1, inputBuffer, 0, BUFFER_SIZE);
@@ -132,11 +159,14 @@ void main() {
     uint index = gl_GlobalInvocationID.x;
     outputData.elements[index] = inputData.elements[index];
 }
-)");
+)", getBackend(), isMobile(), set0Layout);
     program.descriptorLayout(0, createStorageBufferLayout());
     ProgramHandle const computeProgram = driver.createProgram(std::move(program));
 
     driver.dispatchCompute(computeProgram, { GROUP_COUNT, 1, 1 });
+    if (getBackend() == Backend::METAL) {
+        driver.readBufferSubData(output, 0, BUFFER_SIZE, { readback.data(), BUFFER_SIZE });
+    }
     driver.destroyProgram(computeProgram);
     driver.destroyDescriptorSet(descriptorSet);
     driver.destroyDescriptorSetLayout(layout);
@@ -145,6 +175,12 @@ void main() {
     driver.finish();
 
     executeCommands();
+
+    if (getBackend() == Backend::METAL) {
+        for (uint32_t i = 0; i < ELEMENT_COUNT; i++) {
+            EXPECT_FLOAT_EQ(readback[i], 1.0f);
+        }
+    }
 }
 
 TEST_F(ComputeTest, writesStorageImageFromCompute) {
@@ -153,9 +189,10 @@ TEST_F(ComputeTest, writesStorageImageFromCompute) {
 
     TextureHandle const texture = driver.createTexture(SamplerType::SAMPLER_2D, 1,
             TextureFormat::RGBA8, 1, TEXTURE_SIZE, TEXTURE_SIZE, 1,
-            TextureUsage::STORAGE | TextureUsage::SAMPLEABLE);
-    DescriptorSetLayoutHandle const layout = driver.createDescriptorSetLayout(
-            createStorageImageLayout());
+            TextureUsage::STORAGE | TextureUsage::SAMPLEABLE | TextureUsage::BLIT_SRC);
+    DescriptorSetLayout const set0Layout = createStorageImageLayout();
+    DescriptorSetLayoutHandle const layout =
+            driver.createDescriptorSetLayout(createStorageImageLayout());
     DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
     driver.updateDescriptorSetTexture(descriptorSet, 0, texture, {});
     driver.bindDescriptorSet(descriptorSet, 0, {});
@@ -167,11 +204,17 @@ layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outputImage;
 void main() {
     imageStore(outputImage, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 0.0, 0.0, 1.0));
 }
-)");
+)", getBackend(), isMobile(), set0Layout);
     program.descriptorLayout(0, createStorageImageLayout());
     ProgramHandle const computeProgram = driver.createProgram(std::move(program));
 
+    std::vector<uint8_t> pixels(TEXTURE_SIZE * TEXTURE_SIZE * 4, 0);
     driver.dispatchCompute(computeProgram, { 1, 1, 1 });
+    if (getBackend() == Backend::METAL) {
+        driver.readTexture(texture, 0, 0, 0, 0, TEXTURE_SIZE, TEXTURE_SIZE,
+                PixelBufferDescriptor(pixels.data(), pixels.size(),
+                        PixelDataFormat::RGBA, PixelDataType::UBYTE));
+    }
     driver.destroyProgram(computeProgram);
     driver.destroyDescriptorSet(descriptorSet);
     driver.destroyDescriptorSetLayout(layout);
@@ -179,4 +222,13 @@ void main() {
     driver.finish();
 
     executeCommands();
+
+    if (getBackend() == Backend::METAL) {
+        for (size_t i = 0; i < pixels.size(); i += 4) {
+            EXPECT_EQ(pixels[i + 0], 255);
+            EXPECT_EQ(pixels[i + 1], 0);
+            EXPECT_EQ(pixels[i + 2], 0);
+            EXPECT_EQ(pixels[i + 3], 255);
+        }
+    }
 }

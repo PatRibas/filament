@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include "common/arguments.h"
+
 #include "generated/resources/resources.h"
 
 #include <filamentapp/Config.h>
@@ -66,12 +68,9 @@ struct App {
 } // namespace
 
 int main(int argc, char** argv) {
-    (void) argc;
-    (void) argv;
-
     Config config;
     config.title = "compute_texture";
-    config.backend = Engine::Backend::VULKAN;
+    config.backend = samples::parseArgumentsForBackend(argc, argv);
     config.featureLevel = backend::FeatureLevel::FEATURE_LEVEL_2;
 
     App app;

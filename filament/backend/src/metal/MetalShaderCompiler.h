@@ -48,7 +48,7 @@ public:
     class MetalFunctionBundle {
     public:
         using Raster = std::tuple<id<MTLFunction>, id<MTLFunction>>;
-        using Compute = id<MTLFunction>;
+        using Compute = std::tuple<id<MTLFunction>, MTLSize>;
         using Error = std::tuple<NSString*, NSString*>; // error message, Program name
         struct None {};
 
@@ -77,9 +77,14 @@ public:
             return std::get<Raster>(mPrograms);
         }
 
-        Compute getComputeFunction() const {
+        id<MTLFunction> getComputeFunction() const {
             assert_invariant(std::holds_alternative<Compute>(mPrograms));
-            return std::get<Compute>(mPrograms);
+            return std::get<0>(std::get<Compute>(mPrograms));
+        }
+
+        MTLSize getComputeThreadsPerThreadgroup() const {
+            assert_invariant(std::holds_alternative<Compute>(mPrograms));
+            return std::get<1>(std::get<Compute>(mPrograms));
         }
 
         bool isRaster() const { return std::holds_alternative<Raster>(mPrograms); }
@@ -97,10 +102,11 @@ public:
             return MetalFunctionBundle(Raster{fragment, vertex});
         }
 
-        static MetalFunctionBundle compute(id<MTLFunction> compute) {
+        static MetalFunctionBundle compute(
+                id<MTLFunction> compute, MTLSize threadsPerThreadgroup) {
             assert_invariant(compute);
             assert_invariant(compute.functionType == MTLFunctionTypeKernel);
-            return MetalFunctionBundle(Compute{compute});
+            return MetalFunctionBundle(Compute{compute, threadsPerThreadgroup});
         }
 
         static MetalFunctionBundle error(NSString* errorMessage, NSString* programName) {

@@ -283,6 +283,7 @@ public:
 
     const MetalShaderCompiler::MetalFunctionBundle& getFunctions();
     const MetalShaderCompiler::MetalFunctionBundle& getFunctionsIfPresent() const;
+    id<MTLComputePipelineState> getOrCreateComputePipelineState();
 
 private:
     void initialize();
@@ -290,6 +291,7 @@ private:
     MetalContext& mContext;
     MetalShaderCompiler::MetalFunctionBundle mFunctionBundle;
     MetalShaderCompiler::program_token_t mToken;
+    id<MTLComputePipelineState> mComputePipelineState = nil;
 };
 
 struct PixelBufferShape {
@@ -536,6 +538,7 @@ struct MetalDescriptorSet : public HwDescriptorSet {
     MetalDescriptorSet(MetalDescriptorSetLayout* layout) noexcept;
 
     void finalize(MetalDriver* driver);
+    void finalizeCompute(MetalDriver* driver, id<MTLComputeCommandEncoder> computeEncoder);
 
     void setLabel(const utils::ImmutableCString& l) {
 #if FILAMENT_METAL_DEBUG_LABELS
@@ -564,6 +567,8 @@ struct MetalDescriptorSet : public HwDescriptorSet {
 
     std::vector<id<MTLResource>> vertexResources;
     std::vector<id<MTLResource>> fragmentResources;
+    std::vector<id<MTLResource>> computeReadResources;
+    std::vector<id<MTLResource>> computeReadWriteResources;
 
     std::vector<std::shared_ptr<MetalExternalImage>> externalImages;
 

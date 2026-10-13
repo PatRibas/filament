@@ -129,6 +129,54 @@ TEST(ArgBufferFixup, MultipleBuffers) {
     MetalArgumentBuffer::destroy(&argBuffer);
 }
 
+TEST(ArgBufferFixup, BufferAddressSpaces) {
+    auto argBuffer =
+            MetalArgumentBuffer::Builder()
+                    .name("myArgumentBuffer")
+                    .buffer(0, "FrameUniforms", "frameUniforms",
+                            MetalArgumentBuffer::AddressSpace::CONSTANT)
+                    .buffer(1, "StorageBuffer", "storageBuffer",
+                            MetalArgumentBuffer::AddressSpace::DEVICE)
+                    .buffer(2, "ReadOnlyBuffer", "readOnlyBuffer",
+                            MetalArgumentBuffer::AddressSpace::CONST_DEVICE)
+                    .build();
+
+    const std::string expected =
+            "struct FrameUniforms;\n"
+            "struct StorageBuffer;\n"
+            "struct ReadOnlyBuffer;\n"
+            "struct myArgumentBuffer {\n"
+            "constant FrameUniforms* frameUniforms [[id(0)]];\n"
+            "device StorageBuffer* storageBuffer [[id(1)]];\n"
+            "const device ReadOnlyBuffer* readOnlyBuffer [[id(2)]];\n"
+            "}";
+
+    EXPECT_EQ(argBuffer->getMsl(), expected);
+
+    MetalArgumentBuffer::destroy(&argBuffer);
+}
+
+TEST(ArgBufferFixup, StorageImages) {
+    auto argBuffer =
+            MetalArgumentBuffer::Builder()
+                    .name("myArgumentBuffer")
+                    .image(0, "imageFloat", DescriptorType::STORAGE_IMAGE_2D_FLOAT)
+                    .image(1, "imageInt", DescriptorType::STORAGE_IMAGE_2D_INT)
+                    .image(2, "imageUint", DescriptorType::STORAGE_IMAGE_2D_UINT)
+                    .build();
+
+    const std::string expected =
+            "struct myArgumentBuffer {\n"
+            "texture2d<float, access::write> imageFloat [[id(0)]];\n"
+            "texture2d<int, access::write> imageInt [[id(1)]];\n"
+            "texture2d<uint, access::write> imageUint [[id(2)]];\n"
+            "}";
+
+    EXPECT_EQ(argBuffer->getMsl(), expected);
+
+    MetalArgumentBuffer::destroy(&argBuffer);
+}
+
 TEST(ArgBufferFixup, TextureAndSamplerMS) {
     auto argBuffer =
             MetalArgumentBuffer::Builder()

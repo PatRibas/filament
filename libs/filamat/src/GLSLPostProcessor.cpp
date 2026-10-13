@@ -166,6 +166,9 @@ static void collectDescriptorsForSet(DescriptorSetBindingPoints set,
             case DescriptorSetBindingPoints::PER_RENDERABLE:
                 return descriptor_sets::getPerRenderableLayout();
             case DescriptorSetBindingPoints::PER_MATERIAL:
+                if (!material.descriptorSetLayout.descriptors.empty()) {
+                    return material.descriptorSetLayout;
+                }
                 return getPerMaterialDescriptorSet(config.materialInfo->sib);
             default:
                 return DescriptorSetLayout {};
@@ -191,8 +194,15 @@ static void collectDescriptorsForSet(DescriptorSetBindingPoints set,
             SamplerInterfaceBlock::filterSamplerList(std::move(samplerList), descriptorSetLayout);
 
     // helper to get the name of a descriptor for this set, given a binding.
-    auto getDescriptorName = [set, &descriptorSetSamplerList](descriptor_binding_t binding) {
+    auto getDescriptorName = [set, &material, &descriptorSetSamplerList](
+                                     descriptor_binding_t binding) {
         if (set == DescriptorSetBindingPoints::PER_MATERIAL) {
+            auto bindingPos = std::find_if(material.descriptorBindings.begin(),
+                    material.descriptorBindings.end(),
+                    [&](const auto& entry) { return entry.binding == binding; });
+            if (bindingPos != material.descriptorBindings.end()) {
+                return bindingPos->name;
+            }
             auto pos = std::find_if(descriptorSetSamplerList.begin(), descriptorSetSamplerList.end(),
                     [&](const auto& entry) { return entry.binding == binding; });
             if (pos == descriptorSetSamplerList.end()) {
@@ -265,6 +275,14 @@ static void prettyPrintDescriptorSetInfoVector(DescriptorSets const& sets) noexc
 }
 
 static void collectDescriptorSets(const GLSLPostProcessor::Config& config, DescriptorSets& sets) {
+    if (config.domain == MaterialDomain::COMPUTE) {
+        auto computeDescriptors = DescriptorSetInfo::with_capacity(MAX_DESCRIPTOR_COUNT);
+        collectDescriptorsForSet(
+                DescriptorSetBindingPoints::PER_MATERIAL, config, computeDescriptors);
+        sets[0] = std::move(computeDescriptors);
+        return;
+    }
+
     auto perViewDescriptors = DescriptorSetInfo::with_capacity(MAX_DESCRIPTOR_COUNT);
     collectDescriptorsForSet(DescriptorSetBindingPoints::PER_VIEW, config, perViewDescriptors);
     sets[+DescriptorSetBindingPoints::PER_VIEW] = std::move(perViewDescriptors);
@@ -366,12 +384,29 @@ void GLSLPostProcessor::spirvToMsl(const SpirvBlob* spirv, std::string* outMsl,
     }
 
     mslOptions.argument_buffers = true;
+    mslOptions.argument_buffers_tier = CompilerMSL::Options::ArgumentBuffersTier::Tier2;
     mslOptions.ios_support_base_vertex_instance = true;
     mslOptions.dynamic_offsets_buffer_index = 25;
 
     mslCompiler.set_msl_options(mslOptions);
 
-
+    if (stage == ShaderStage::COMPUTE) {
+        SpecializationConstant wgX, wgY, wgZ;
+        if (mslCompiler.get_work_group_size_specialization_constants(wgX, wgY, wgZ) ==
+                spirv_cross::ID(0)) {
+            uint32_t const lx =
+                    mslCompiler.get_execution_mode_argument(spv::ExecutionModeLocalSize, 0);
+            uint32_t const ly =
+                    mslCompiler.get_execution_mode_argument(spv::ExecutionModeLocalSize, 1);
+            uint32_t const lz =
+                    mslCompiler.get_execution_mode_argument(spv::ExecutionModeLocalSize, 2);
+            mslCompiler.add_header_line(
+                    "constant uint3 gl_WorkGroupSize [[maybe_unused]] = uint3(" +
+                    std::to_string(lx > 0 ? lx : 1u) + "u, " +
+                    std::to_string(ly > 0 ? ly : 1u) + "u, " +
+                    std::to_string(lz > 0 ? lz : 1u) + "u);");
+        }
+    }
 
     auto executionModel = mslCompiler.get_execution_model();
 
@@ -438,11 +473,37 @@ void GLSLPostProcessor::spirvToMsl(const SpirvBlob* spirv, std::string* outMsl,
                     break;
                 case DescriptorType::UNIFORM_BUFFER:
                 case DescriptorType::SHADER_STORAGE_BUFFER: {
-                    std::string lowercasedName = name.c_str();
-                    assert_invariant(!lowercasedName.empty());
-                    lowercasedName[0] = std::tolower(lowercasedName[0]);
-                    argBufferBuilder
-                            .buffer(info.binding * 2 + 0, name.c_str(), lowercasedName);
+                    std::string typeName = name.c_str();
+                    std::string instanceName = name.c_str();
+                    assert_invariant(!typeName.empty());
+                    typeName[0] = std::toupper(static_cast<unsigned char>(typeName[0]));
+                    instanceName[0] = std::tolower(static_cast<unsigned char>(instanceName[0]));
+                    const auto& resourceList = (info.type == DescriptorType::SHADER_STORAGE_BUFFER)
+                            ? resources.storage_buffers
+                            : resources.uniform_buffers;
+                    for (const auto& res : resourceList) {
+                        if (mslCompiler.get_decoration(res.id, spv::DecorationDescriptorSet) ==
+                                        setIndex &&
+                                mslCompiler.get_decoration(res.id, spv::DecorationBinding) ==
+                                        info.binding) {
+                            if (!res.name.empty()) {
+                                typeName = res.name;
+                            }
+                            const std::string& varName = mslCompiler.get_name(res.id);
+                            if (!varName.empty()) {
+                                instanceName = varName;
+                            }
+                            break;
+                        }
+                    }
+                    auto addressSpace = MetalArgumentBuffer::AddressSpace::CONSTANT;
+                    if (info.type == DescriptorType::SHADER_STORAGE_BUFFER) {
+                        addressSpace = (stage == ShaderStage::COMPUTE)
+                                ? MetalArgumentBuffer::AddressSpace::DEVICE
+                                : MetalArgumentBuffer::AddressSpace::CONST_DEVICE;
+                    }
+                    argBufferBuilder.buffer(
+                            info.binding * 2 + 0, typeName, instanceName, addressSpace);
                     if (any(info.flags & DescriptorFlags::DYNAMIC_OFFSET)) {
                         // Note: this requires that the sets and descriptors are sorted (at least
                         // the uniforms).
@@ -488,9 +549,23 @@ void GLSLPostProcessor::spirvToMsl(const SpirvBlob* spirv, std::string* outMsl,
                 }
                 case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
                 case DescriptorType::STORAGE_IMAGE_2D_INT:
-                case DescriptorType::STORAGE_IMAGE_2D_UINT:
-                    // Storage images are currently emitted only for Vulkan materials.
+                case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+                    std::string imageName = name.c_str();
+                    for (const auto& res : resources.storage_images) {
+                        if (mslCompiler.get_decoration(res.id, spv::DecorationDescriptorSet) ==
+                                        setIndex &&
+                                mslCompiler.get_decoration(res.id, spv::DecorationBinding) ==
+                                        info.binding) {
+                            const std::string& varName = mslCompiler.get_name(res.id);
+                            if (!varName.empty()) {
+                                imageName = varName;
+                            }
+                            break;
+                        }
+                    }
+                    argBufferBuilder.image(info.binding * 2 + 0, imageName, info.type);
                     break;
+                }
             }
         }
         argumentBuffers.push_back(argBufferBuilder.build());
