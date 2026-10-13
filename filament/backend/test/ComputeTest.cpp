@@ -68,8 +68,9 @@ void ComputeTest::SetUp() {
     driver = platform->createDriver(nullptr, {});
     commandStream = std::make_unique<CommandStream>(*driver, commandBufferQueue.getCircularBuffer());
 
-    if (getBackend() != Backend::VULKAN && getBackend() != Backend::METAL) {
-        GTEST_SKIP() << "Compute driver tests currently target Vulkan and Metal.";
+    if (getBackend() != Backend::VULKAN && getBackend() != Backend::METAL &&
+            getBackend() != Backend::OPENGL) {
+        GTEST_SKIP() << "Compute driver tests currently target Vulkan, Metal, and OpenGL.";
     }
 
     // We need at least feature level 2 to run the Compute tests

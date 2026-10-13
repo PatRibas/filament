@@ -629,6 +629,7 @@ void MaterialDefinition::processSpecializationConstants(FEngine& engine) {
 void MaterialDefinition::processPushConstants() {
     FixedCapacityVector<Program::PushConstant>& vertexConstants = pushConstants[uint8_t(ShaderStage::VERTEX)];
     FixedCapacityVector<Program::PushConstant>& fragmentConstants = pushConstants[uint8_t(ShaderStage::FRAGMENT)];
+    FixedCapacityVector<Program::PushConstant>& computeConstants = pushConstants[uint8_t(ShaderStage::COMPUTE)];
 
     CString structVarName;
     FixedCapacityVector<MaterialPushConstant> allPushConstants;
@@ -636,10 +637,10 @@ void MaterialDefinition::processPushConstants() {
 
     vertexConstants.reserve(allPushConstants.size());
     fragmentConstants.reserve(allPushConstants.size());
+    computeConstants.reserve(allPushConstants.size());
 
     constexpr size_t MAX_NAME_LEN = 60;
     char buf[MAX_NAME_LEN];
-    uint8_t vertexCount = 0, fragmentCount = 0;
 
     std::for_each(allPushConstants.cbegin(), allPushConstants.cend(),
             [&](MaterialPushConstant const& constant) {
@@ -650,13 +651,12 @@ void MaterialDefinition::processPushConstants() {
                 switch (constant.stage) {
                     case ShaderStage::VERTEX:
                         vertexConstants.push_back({cs, constant.type});
-                        vertexCount++;
                         break;
                     case ShaderStage::FRAGMENT:
                         fragmentConstants.push_back({cs, constant.type});
-                        fragmentCount++;
                         break;
                     case ShaderStage::COMPUTE:
+                        computeConstants.push_back({cs, constant.type});
                         break;
                 }
             });

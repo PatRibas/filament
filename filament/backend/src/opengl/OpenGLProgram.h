@@ -44,6 +44,7 @@ class OpenGLDriver;
 struct PushConstantBundle {
     utils::Slice<const std::pair<GLint, ConstantType>> vertexConstants;
     utils::Slice<const std::pair<GLint, ConstantType>> fragmentConstants;
+    utils::Slice<const std::pair<GLint, ConstantType>> computeConstants;
 };
 
 class OpenGLProgram : public HwProgram {
@@ -82,6 +83,10 @@ public:
         return mBindingMap.get(set, binding);
     }
 
+    GLuint getImageUnit(descriptor_set_t set, descriptor_binding_t binding) const noexcept {
+        return mBindingMap.get(set, binding);
+    }
+
     utils::bitset64 getActiveDescriptors(descriptor_set_t set) const noexcept {
         return mBindingMap.getActiveDescriptors(set);
     }
@@ -91,10 +96,12 @@ public:
     void setRec709ColorSpace(bool rec709) const noexcept;
 
     PushConstantBundle getPushConstants() {
-        auto fragBegin = mPushConstants.begin() + mPushConstantFragmentStageOffset;
+        auto const fragBegin = mPushConstants.begin() + mPushConstantFragmentStageOffset;
+        auto const compBegin = mPushConstants.begin() + mPushConstantComputeStageOffset;
         return {
                 .vertexConstants = { mPushConstants.begin(), fragBegin },
-                .fragmentConstants = { fragBegin, mPushConstants.end() },
+                .fragmentConstants = { fragBegin, compBegin },
+                .computeConstants = { compBegin, mPushConstants.end() },
         };
     }
 
@@ -125,10 +132,11 @@ private:
         mutable uint32_t offset = 0;
     };
     UniformsRecord const* mUniformsRecords = nullptr;
-    GLint mRec709Location : 24;     // 4 bytes
+    GLint mRec709Location : 16;                     // 2 bytes
 
-    // Push constant array offset for fragment stage constants.
-    GLint mPushConstantFragmentStageOffset : 8;      // 1 byte
+    // Push constant array offsets for fragment and compute stage constants.
+    uint8_t mPushConstantFragmentStageOffset = 0;   // 1 byte
+    uint8_t mPushConstantComputeStageOffset = 0;    // 1 byte
 
 public:
     struct {

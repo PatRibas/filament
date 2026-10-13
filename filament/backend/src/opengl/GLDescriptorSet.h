@@ -126,6 +126,12 @@ private:
         SamplerParams params{};                 // 4
         float anisotropy = 1.0f;                // 4
     };
+
+    // A storage image descriptor
+    struct StorageImage {
+        TextureHandle handle;                   // 4
+    };
+
     struct Descriptor {
         std::variant<
                 Buffer,
@@ -133,7 +139,8 @@ private:
                 BufferGLES2,
                 Sampler,
                 SamplerWithAnisotropyWorkaround,
-                SamplerGLES2> desc;
+                SamplerGLES2,
+                StorageImage> desc;
     };
     static_assert(sizeof(Descriptor) <= 32);
 

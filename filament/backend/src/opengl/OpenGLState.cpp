@@ -306,7 +306,11 @@ void OpenGLState::deleteBuffer(GLuint buffer, GLenum target) noexcept {
     assert_invariant(mContext.getFeatureLevel() >= FeatureLevel::FEATURE_LEVEL_1 ||
             (target != GL_UNIFORM_BUFFER && target != GL_TRANSFORM_FEEDBACK_BUFFER));
 
-    if (target == GL_UNIFORM_BUFFER || target == GL_TRANSFORM_FEEDBACK_BUFFER) {
+    if (target == GL_UNIFORM_BUFFER || target == GL_TRANSFORM_FEEDBACK_BUFFER
+#if defined(BACKEND_OPENGL_LEVEL_GLES31)
+            || target == GL_SHADER_STORAGE_BUFFER
+#endif
+    ) {
         auto& indexedBinding = state.buffers.targets[targetIndex];
         UTILS_NOUNROLL
         for (auto& entry: indexedBinding.buffers) {

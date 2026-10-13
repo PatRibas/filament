@@ -159,6 +159,10 @@ extern PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC glFramebufferTextureMu
 #endif
 #if defined(__ANDROID__) && !defined(FILAMENT_SILENCE_NOT_SUPPORTED_BY_ES2)
 extern PFNGLDISPATCHCOMPUTEPROC glDispatchCompute;
+extern PFNGLBINDIMAGETEXTUREPROC glBindImageTexture;
+extern PFNGLMEMORYBARRIERPROC glMemoryBarrier;
+extern PFNGLGETPROGRAMRESOURCEINDEXPROC glGetProgramResourceIndex;
+extern PFNGLGETPROGRAMRESOURCEIVPROC glGetProgramResourceiv;
 #endif
 #endif // __EMSCRIPTEN__
 } // namespace glext

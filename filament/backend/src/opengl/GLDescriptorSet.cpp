@@ -140,7 +140,7 @@ GLDescriptorSet::GLDescriptorSet(OpenGLState& gl, DescriptorSetLayoutHandle dslh
             case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
             case DescriptorType::STORAGE_IMAGE_2D_INT:
             case DescriptorType::STORAGE_IMAGE_2D_UINT:
-                // Storage images are currently implemented only by the Vulkan backend.
+                desc.emplace<StorageImage>();
                 break;
         }
     }
@@ -228,6 +228,8 @@ void GLDescriptorSet::update(OpenGLState& gl, HandleAllocatorGL& handleAllocator
             } else {
                 arg.params = params;
             }
+        } else if constexpr (std::is_same_v<T, StorageImage>) {
+            arg.handle = th;
         } else {
             // User asked to update the wrong type of descriptor. This should never happen
             // because we're checking that on the filament side
@@ -407,6 +409,21 @@ void GLDescriptorSet::bind(
                 } else {
                     gl.unbindTextureUnit(unit);
                 }
+            } else if constexpr (std::is_same_v<T, StorageImage>) {
+#if defined(BACKEND_OPENGL_LEVEL_GLES31)
+#if defined(__ANDROID__)
+                using glext::glBindImageTexture;
+#endif
+                GLuint const unit = p.getImageUnit(set, binding);
+                if (arg.handle) {
+                    GLTexture const* const t = handleAllocator.handle_cast<GLTexture*>(arg.handle);
+                    GLint const level = t->gl.baseLevel <= t->gl.maxLevel ? GLint(t->gl.baseLevel) : 0;
+                    glBindImageTexture(unit, t->gl.id, level, GL_FALSE, 0, GL_WRITE_ONLY,
+                            t->gl.internalFormat);
+                } else {
+                    glBindImageTexture(unit, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
+                }
+#endif
             }
         }, entry.desc);
     });

@@ -620,7 +620,7 @@ utils::io::sstream& CodeGenerator::generateImages(utils::io::sstream& out,
 
         out << "\nlayout(";
         if (mTargetApi == TargetApi::OPENGL) {
-            out << "binding = " << +image.binding << ", ";
+            out << "binding = " << getUniqueImageBindingPoint() << ", ";
         } else {
             out << "set = " << +set << ", binding = " << +image.binding << ", ";
         }

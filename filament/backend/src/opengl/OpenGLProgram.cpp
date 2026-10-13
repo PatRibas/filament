@@ -54,19 +54,21 @@ struct OpenGLProgram::LazyInitializationData {
     Program::BindingUniformsInfo bindingUniformInfo;
     FixedCapacityVector<Program::PushConstant> vertexPushConstants;
     FixedCapacityVector<Program::PushConstant> fragmentPushConstants;
+    FixedCapacityVector<Program::PushConstant> computePushConstants;
 };
 
 
 OpenGLProgram::OpenGLProgram() noexcept = default;
 
 OpenGLProgram::OpenGLProgram(OpenGLDriver& gld, Program&& program) noexcept
-        : HwProgram(std::move(program.getName())), mRec709Location(-1), mPushConstantFragmentStageOffset(0) {
+        : HwProgram(std::move(program.getName())), mRec709Location(-1) {
     auto* const lazyInitializationData = new(std::nothrow) LazyInitializationData();
     if (UTILS_UNLIKELY(gld.getContext().isES2())) {
         lazyInitializationData->bindingUniformInfo = std::move(program.getBindingUniformInfo());
     }
     lazyInitializationData->vertexPushConstants = std::move(program.getPushConstants(ShaderStage::VERTEX));
     lazyInitializationData->fragmentPushConstants = std::move(program.getPushConstants(ShaderStage::FRAGMENT));
+    lazyInitializationData->computePushConstants = std::move(program.getPushConstants(ShaderStage::COMPUTE));
     lazyInitializationData->descriptorBindings = std::move(program.getDescriptorBindings());
 
     ShaderCompilerService& compiler = gld.getShaderCompilerService();
@@ -136,6 +138,8 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
 
     GLuint tmu = 0;
     GLuint binding = 0;
+    GLuint ssboBinding = 0;
+    GLuint imageUnit = 0;
 
     // needed for samplers
     gls.useProgram(program);
@@ -144,8 +148,7 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
     for (descriptor_set_t set = 0; set < MAX_DESCRIPTOR_SET_COUNT; set++) {
         for (Program::Descriptor const& entry: lazyInitializationData.descriptorBindings[set]) {
             switch (entry.type) {
-                case DescriptorType::UNIFORM_BUFFER:
-                case DescriptorType::SHADER_STORAGE_BUFFER: {
+                case DescriptorType::UNIFORM_BUFFER: {
                     if (!entry.name.empty()) {
 #ifndef FILAMENT_SILENCE_NOT_SUPPORTED_BY_ES2
                         if (UTILS_LIKELY(!gls.isES2())) {
@@ -172,6 +175,38 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
                             }
                         }
                     }
+                    break;
+                }
+                case DescriptorType::SHADER_STORAGE_BUFFER: {
+#if defined(BACKEND_OPENGL_LEVEL_GLES31)
+#if defined(__ANDROID__)
+                    using glext::glGetProgramResourceIndex;
+                    using glext::glGetProgramResourceiv;
+#endif
+                    if (!entry.name.empty() &&
+                            (gls.isAtLeastGL<4, 3>() || gls.isAtLeastGLES<3, 1>())) {
+                        GLuint const index = glGetProgramResourceIndex(program,
+                                GL_SHADER_STORAGE_BLOCK, entry.name.c_str());
+                        if (index != GL_INVALID_INDEX) {
+#if defined(BACKEND_OPENGL_VERSION_GL)
+                            glShaderStorageBlockBinding(program, index, ssboBinding);
+                            mBindingMap.insert(set, entry.binding,
+                                    { ssboBinding, entry.type });
+                            ++ssboBinding;
+#else
+                            GLenum const prop = GL_BUFFER_BINDING;
+                            GLint assignedBinding = 0;
+                            glGetProgramResourceiv(program, GL_SHADER_STORAGE_BLOCK, index,
+                                    1, &prop, 1, nullptr, &assignedBinding);
+                            mBindingMap.insert(set, entry.binding,
+                                    { GLuint(assignedBinding), entry.type });
+                            (void)ssboBinding;
+#endif
+                        }
+                    }
+#else
+                    (void)ssboBinding;
+#endif
                     break;
                 }
                 case DescriptorType::SAMPLER_2D_FLOAT:
@@ -215,9 +250,29 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
                     break;
                 case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
                 case DescriptorType::STORAGE_IMAGE_2D_INT:
-                case DescriptorType::STORAGE_IMAGE_2D_UINT:
-                    // Storage images are currently implemented only by the Vulkan backend.
+                case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+#if defined(BACKEND_OPENGL_LEVEL_GLES31)
+                    if (!entry.name.empty() &&
+                            (gls.isAtLeastGL<4, 3>() || gls.isAtLeastGLES<3, 1>())) {
+                        GLint const loc = glGetUniformLocation(program, entry.name.c_str());
+                        if (loc >= 0) {
+#if defined(BACKEND_OPENGL_VERSION_GL)
+                            mBindingMap.insert(set, entry.binding, { imageUnit, entry.type });
+                            glUniform1i(loc, GLint(imageUnit));
+                            ++imageUnit;
+#else
+                            GLint unit = 0;
+                            glGetUniformiv(program, loc, &unit);
+                            mBindingMap.insert(set, entry.binding, { GLuint(unit), entry.type });
+                            (void)imageUnit;
+#endif
+                        }
+                    }
+#else
+                    (void)imageUnit;
+#endif
                     break;
+                }
             }
         }
         CHECK_GL_ERROR()
@@ -252,11 +307,15 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
 
     auto& vertexConstants = lazyInitializationData.vertexPushConstants;
     auto& fragmentConstants = lazyInitializationData.fragmentPushConstants;
+    auto& computeConstants = lazyInitializationData.computePushConstants;
 
-    size_t const totalConstantCount = vertexConstants.size() + fragmentConstants.size();
+    size_t const totalConstantCount =
+            vertexConstants.size() + fragmentConstants.size() + computeConstants.size();
     if (totalConstantCount > 0) {
         mPushConstants.reserve(totalConstantCount);
-        mPushConstantFragmentStageOffset = vertexConstants.size();
+        mPushConstantFragmentStageOffset = uint8_t(vertexConstants.size());
+        mPushConstantComputeStageOffset =
+                uint8_t(vertexConstants.size() + fragmentConstants.size());
         auto const transformAndAdd = [&](Program::PushConstant const& constant) {
             if (!constant.name.empty()) {
                 GLint const loc = glGetUniformLocation(program, constant.name.c_str());
@@ -269,6 +328,7 @@ void OpenGLProgram::initializeProgramState(OpenGLState& gls, GLuint program,
         };
         std::for_each(vertexConstants.cbegin(), vertexConstants.cend(), transformAndAdd);
         std::for_each(fragmentConstants.cbegin(), fragmentConstants.cend(), transformAndAdd);
+        std::for_each(computeConstants.cbegin(), computeConstants.cend(), transformAndAdd);
     }
 }
 

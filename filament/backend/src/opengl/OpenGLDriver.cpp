@@ -439,7 +439,8 @@ void OpenGLDriver::bindSampler(GLuint const unit, GLuint const sampler) noexcept
 
 void OpenGLDriver::setPushConstant(ShaderStage const stage, uint8_t const index,
         PushConstantVariant const value) {
-    assert_invariant(stage == ShaderStage::VERTEX || stage == ShaderStage::FRAGMENT);
+    assert_invariant(stage == ShaderStage::VERTEX || stage == ShaderStage::FRAGMENT ||
+            stage == ShaderStage::COMPUTE);
 
 #if FILAMENT_ENABLE_MATDBG
     if (UTILS_UNLIKELY(!mValidProgram)) {
@@ -452,6 +453,8 @@ void OpenGLDriver::setPushConstant(ShaderStage const stage, uint8_t const index,
         constants = mCurrentPushConstants->vertexConstants;
     } else if (stage == ShaderStage::FRAGMENT) {
         constants = mCurrentPushConstants->fragmentConstants;
+    } else if (stage == ShaderStage::COMPUTE) {
+        constants = mCurrentPushConstants->computeConstants;
     }
 
     assert_invariant(index < constants.size());
@@ -1081,6 +1084,9 @@ void OpenGLDriver::createTextureCommon(OpenGLState& gl, Handle<HwTexture> th, Sa
         usage |= TextureUsage::SAMPLEABLE;
     } else if (any(usage & TextureUsage::UPLOADABLE)) {
         // if we have the uploadable flag, we also need to use a texture
+        usage |= TextureUsage::SAMPLEABLE;
+    } else if (any(usage & TextureUsage::STORAGE)) {
+        // glBindImageTexture requires an immutable texture object (not a renderbuffer)
         usage |= TextureUsage::SAMPLEABLE;
     } else if (target != SamplerType::SAMPLER_2D) {
         // renderbuffers can only be 2D
@@ -4973,7 +4979,7 @@ void OpenGLDriver::updateDescriptors(bitset8 const invalidDescriptorSets) noexce
         if (entry.dsh) {
             GLDescriptorSet const* const ds = handle_cast<GLDescriptorSet*>(entry.dsh);
 #ifndef NDEBUG
-            if (UTILS_UNLIKELY(!offsetOnly[set])) {
+            if (UTILS_UNLIKELY(!offsetOnly[set] && mCurrentSetLayout[set])) {
                 // validate that this descriptor-set layout matches the layout set in the pipeline
                 // we don't need to do the check if only the offset is changing
                 ds->validate(mHandleAllocator, mCurrentSetLayout[set]);
@@ -5113,16 +5119,28 @@ void OpenGLDriver::draw(PipelineState state, Handle<HwRenderPrimitive> rph,
 
 void OpenGLDriver::dispatchCompute(Handle<HwProgram> program, uint3 const workGroupCount) {
     DEBUG_MARKER()
+    assert_invariant(!mContext.isES2());
     getShaderCompilerService().tick();
 
     OpenGLProgram* const p = handle_cast<OpenGLProgram*>(program);
 
     bool const success = useProgram(p);
+    mValidProgram = success;
     if (UTILS_UNLIKELY(!success)) {
-        // Avoid fatal (or cascading) errors that can occur during the draw call when the program
-        // is invalid. The shader compile error has already been dumped to the console at this
-        // point, so it's fine to simply return early.
+        // Avoid fatal (or cascading) errors that can occur during the dispatch call when the
+        // program is invalid. The shader compile error has already been dumped to the console at
+        // this point, so it's fine to simply return early.
         return;
+    }
+
+    (*mCurrentPushConstants) = p->getPushConstants();
+    mCurrentSetLayout = {};
+
+    // When the program changes, we might have to rebind all or some descriptors
+    auto const invalidDescriptorSets =
+            mInvalidDescriptorSetBindings | mInvalidDescriptorSetBindingOffsets;
+    if (UTILS_UNLIKELY(invalidDescriptorSets.any())) {
+        updateDescriptors(invalidDescriptorSets);
     }
 
 #if defined(BACKEND_OPENGL_LEVEL_GLES31)
@@ -5131,9 +5149,11 @@ void OpenGLDriver::dispatchCompute(Handle<HwProgram> program, uint3 const workGr
     // on Android, GLES3.1 and above entry-points are defined in glext
     // (this is temporary, until we phase-out API < 21)
     using glext::glDispatchCompute;
+    using glext::glMemoryBarrier;
 #endif
 
     glDispatchCompute(workGroupCount.x, workGroupCount.y, workGroupCount.z);
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
 #endif // BACKEND_OPENGL_LEVEL_GLES31
 
 #if FILAMENT_ENABLE_MATDBG

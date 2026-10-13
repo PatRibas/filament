@@ -29,9 +29,11 @@
 
 #include <glslang/Public/ShaderLang.h>
 #include <GlslangToSpv.h>
+#include <spirv_glsl.hpp>
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace filament;
@@ -74,6 +76,49 @@ Program createComputeProgram(const char* shaderSource, Backend backend = Backend
         Program program;
         program.shaderLanguage(ShaderLanguage::MSL);
         program.shader(ShaderStage::COMPUTE, msl.data(), msl.size() + 1);
+        return program;
+    }
+
+    if (backend == Backend::OPENGL) {
+        spirv_cross::CompilerGLSL glslCompiler(spirv);
+        spirv_cross::CompilerGLSL::Options options;
+        options.version = isMobile ? 310 : 430;
+        options.es = isMobile;
+        options.enable_420pack_extension = !isMobile;
+        glslCompiler.set_common_options(options);
+
+        Program::DescriptorBindingsInfo descriptors;
+        descriptors.reserve(set0Layout.descriptors.size());
+        spirv_cross::ShaderResources const resources = glslCompiler.get_shader_resources();
+        for (auto const& d : set0Layout.descriptors) {
+            utils::CString name;
+            if (d.type == DescriptorType::SHADER_STORAGE_BUFFER) {
+                for (auto const& sb : resources.storage_buffers) {
+                    if (glslCompiler.get_decoration(sb.id, spv::DecorationBinding) == d.binding) {
+                        name = utils::CString(sb.name.c_str());
+                        break;
+                    }
+                }
+            } else if (d.type == DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
+                       d.type == DescriptorType::STORAGE_IMAGE_2D_INT ||
+                       d.type == DescriptorType::STORAGE_IMAGE_2D_UINT) {
+                for (auto const& img : resources.storage_images) {
+                    if (glslCompiler.get_decoration(img.id, spv::DecorationBinding) == d.binding) {
+                        name = utils::CString(img.name.c_str());
+                        break;
+                    }
+                }
+            }
+            descriptors.push_back({ name, d.type, d.binding });
+        }
+
+        std::string const glsl = glslCompiler.compile();
+        Program program;
+        program.shaderLanguage(ShaderLanguage::ESSL3);
+        program.shader(ShaderStage::COMPUTE, glsl.data(), glsl.size() + 1);
+        if (!descriptors.empty()) {
+            program.descriptorBindings(0, std::move(descriptors));
+        }
         return program;
     }
 
@@ -164,7 +209,7 @@ void main() {
     ProgramHandle const computeProgram = driver.createProgram(std::move(program));
 
     driver.dispatchCompute(computeProgram, { GROUP_COUNT, 1, 1 });
-    if (getBackend() == Backend::METAL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
         driver.readBufferSubData(output, 0, BUFFER_SIZE, { readback.data(), BUFFER_SIZE });
     }
     driver.destroyProgram(computeProgram);
@@ -176,7 +221,7 @@ void main() {
 
     executeCommands();
 
-    if (getBackend() == Backend::METAL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
         for (uint32_t i = 0; i < ELEMENT_COUNT; i++) {
             EXPECT_FLOAT_EQ(readback[i], 1.0f);
         }
@@ -210,7 +255,7 @@ void main() {
 
     std::vector<uint8_t> pixels(TEXTURE_SIZE * TEXTURE_SIZE * 4, 0);
     driver.dispatchCompute(computeProgram, { 1, 1, 1 });
-    if (getBackend() == Backend::METAL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
         driver.readTexture(texture, 0, 0, 0, 0, TEXTURE_SIZE, TEXTURE_SIZE,
                 PixelBufferDescriptor(pixels.data(), pixels.size(),
                         PixelDataFormat::RGBA, PixelDataType::UBYTE));
@@ -223,7 +268,7 @@ void main() {
 
     executeCommands();
 
-    if (getBackend() == Backend::METAL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
         for (size_t i = 0; i < pixels.size(); i += 4) {
             EXPECT_EQ(pixels[i + 0], 255);
             EXPECT_EQ(pixels[i + 1], 0);

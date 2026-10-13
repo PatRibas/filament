@@ -210,6 +210,10 @@ public:
         return mUniqueSsboBindingPoint++;
     }
 
+    uint32_t getUniqueImageBindingPoint() const noexcept {
+        return mUniqueImageBindingPoint++;
+    }
+
 private:
     filament::backend::Precision getDefaultPrecision(ShaderStage stage) const;
     filament::backend::Precision getDefaultUniformPrecision() const;
@@ -256,6 +260,7 @@ private:
     mutable uint32_t mUniqueSamplerBindingPoint = 0;
     mutable uint32_t mUniqueUboBindingPoint = 0;
     mutable uint32_t mUniqueSsboBindingPoint = 0;
+    mutable uint32_t mUniqueImageBindingPoint = 0;
 };
 
 } // namespace filamat
