@@ -30,6 +30,8 @@
 #include <backend/DriverEnums.h>
 #include <backend/Program.h>
 
+#include <math/vec3.h>
+
 #include <tsl/robin_set.h>
 
 namespace filament {
@@ -124,6 +126,7 @@ struct MaterialDefinition {
     Interpolation interpolation = Interpolation::SMOOTH;
     VertexDomain vertexDomain = VertexDomain::OBJECT;
     MaterialDomain materialDomain = MaterialDomain::SURFACE;
+    math::uint3 groupSize = { 1, 1, 1 };
     CullingMode cullingMode = CullingMode::NONE;
     AttributeBitset requiredAttributes;
     UserVariantFilterMask variantFilterMask = 0;

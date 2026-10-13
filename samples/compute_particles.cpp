@@ -34,6 +34,8 @@
 #include <filament/View.h>
 
 #include <utils/EntityManager.h>
+#include <utils/getopt.h>
+#include <utils/Path.h>
 
 #include <math/mat3.h>
 #include <math/mat4.h>
@@ -43,9 +45,12 @@
 #include <math/vec4.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <memory>
+#include <string>
+#include <vector>
 
 using namespace filament;
 using namespace filament::math;
@@ -54,8 +59,7 @@ using utils::EntityManager;
 
 namespace {
 
-constexpr uint32_t PARTICLE_COUNT = 10485760;
-constexpr uint32_t GROUP_COUNT = PARTICLE_COUNT / 64;
+constexpr uint32_t DEFAULT_PARTICLE_COUNT = 10485760;
 
 static const short4 QUAD_TBN = packSnorm16(
         mat3f::packTangentFrame(
@@ -83,10 +87,10 @@ static const uint16_t QUAD_INDICES[6] = {
     2, 1, 3
 };
 
-struct ParticleBufferData {
-    std::array<float4, PARTICLE_COUNT> positions;
-    std::array<float4, PARTICLE_COUNT> velocities;
-    std::array<float4, PARTICLE_COUNT> colors;
+struct ParticleInitialData {
+    std::vector<float4> positions;
+    std::vector<float4> velocities;
+    std::vector<float4> colors;
 };
 
 struct App {
@@ -96,20 +100,28 @@ struct App {
     MaterialInstance* computeInstance = nullptr;
     Material* renderMaterial = nullptr;
     MaterialInstance* renderInstance = nullptr;
-    BufferObject* particleBuffer = nullptr;
+    BufferObject* positionsBuffer = nullptr;
+    BufferObject* velocitiesBuffer = nullptr;
+    BufferObject* colorsBuffer = nullptr;
     VertexBuffer* vertexBuffer = nullptr;
     IndexBuffer* indexBuffer = nullptr;
+    std::unique_ptr<ParticleInitialData> initialData;
+    uint32_t groupCount = 0;
 };
 
-std::unique_ptr<ParticleBufferData> createInitialParticles() {
-    auto data = std::make_unique<ParticleBufferData>();
+std::unique_ptr<ParticleInitialData> createInitialParticles(uint32_t count) {
+    auto data = std::make_unique<ParticleInitialData>();
+    data->positions.resize(count);
+    data->velocities.resize(count);
+    data->colors.resize(count);
+
     uint32_t seed = 12345u;
     auto lcg = [&seed]() {
         seed = seed * 1664525u + 1013904223u;
         return float(seed) / 4294967295.0f;
     };
 
-    for (uint32_t i = 0; i < PARTICLE_COUNT; i++) {
+    for (uint32_t i = 0; i < count; i++) {
         float const px = (lcg() * 2.0f - 1.0f) * 1.2f;
         float const py = (lcg() * 2.0f - 1.0f) * 1.2f;
         float const pz = (lcg() * 2.0f - 1.0f) * 1.2f;
@@ -135,37 +147,120 @@ std::unique_ptr<ParticleBufferData> createInitialParticles() {
     return data;
 }
 
+static void printUsage(char* name) {
+    std::string execName(utils::Path(name).getName());
+    std::string usage("EXEC_NAME\n"
+                      "Usage:\n"
+                      "    EXEC_NAME [options]\n"
+                      "Options:\n"
+                      "   --help, -h\n"
+                      "       Prints this message\n\n"
+                      "   --count, -c\n"
+                      "       Number of particles to render (default: 10485760)\n\n"
+                      "API_USAGE");
+    const std::string from("EXEC_NAME");
+    for (size_t pos = usage.find(from); pos != std::string::npos;
+            pos = usage.find(from, pos)) {
+        usage.replace(pos, from.length(), execName);
+    }
+    const std::string apiUsage("API_USAGE");
+    for (size_t pos = usage.find(apiUsage); pos != std::string::npos;
+            pos = usage.find(apiUsage, pos)) {
+        usage.replace(pos, apiUsage.length(), samples::getBackendAPIArgumentsUsage());
+    }
+    std::cout << usage;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     Config config;
     config.title = "compute_particles";
-    config.backend = samples::parseArgumentsForBackend(argc, argv);
+    config.backend = Engine::Backend::DEFAULT;
     config.iblDirectory = FilamentApp::getRootAssetsPath() + "assets/ibl/lightroom_14b";
 
-    App app;
-    auto setup = [&app](Engine* engine, View* view, Scene* scene) {
-        static auto const initialData = createInitialParticles();
+    uint32_t particleCount = DEFAULT_PARTICLE_COUNT;
 
-        app.particleBuffer = BufferObject::Builder()
-                .size(sizeof(ParticleBufferData))
+    static constexpr const char* OPTSTR = "ha:c:";
+    static const utils::getopt::option OPTIONS[] = {
+        { "help", utils::getopt::no_argument, nullptr, 'h' },
+        { "api", utils::getopt::required_argument, nullptr, 'a' },
+        { "count", utils::getopt::required_argument, nullptr, 'c' },
+        { nullptr, 0, nullptr, 0 }
+    };
+
+    int opt;
+    int optionIndex = 0;
+    while ((opt = utils::getopt::getopt_long(argc, argv, OPTSTR, OPTIONS, &optionIndex)) >= 0) {
+        std::string const arg(utils::getopt::optarg ? utils::getopt::optarg : "");
+        switch (opt) {
+            default:
+            case 'h':
+                printUsage(argv[0]);
+                exit(0);
+            case 'a':
+                config.backend = samples::parseArgumentsForBackend(arg);
+                break;
+            case 'c': {
+                long long const val = std::atoll(arg.c_str());
+                if (val <= 0) {
+                    std::cerr << "Invalid particle count: " << arg << std::endl;
+                    exit(1);
+                }
+                particleCount = static_cast<uint32_t>(val);
+                break;
+            }
+        }
+    }
+
+    App app;
+    auto setup = [&app, particleCount](Engine* engine, View* view, Scene* scene) {
+        app.initialData = createInitialParticles(particleCount);
+        size_t const bufferSize = particleCount * sizeof(float4);
+
+        app.positionsBuffer = BufferObject::Builder()
+                .size(bufferSize)
                 .bindingType(BufferObject::BindingType::SHADER_STORAGE)
-                .name("ParticleBuffer")
+                .name("Positions")
                 .build(*engine);
-        app.particleBuffer->setBuffer(*engine,
-                BufferObject::BufferDescriptor(initialData.get(), sizeof(ParticleBufferData), nullptr));
+        app.positionsBuffer->setBuffer(*engine,
+                BufferObject::BufferDescriptor(app.initialData->positions.data(), bufferSize, nullptr));
+
+        app.velocitiesBuffer = BufferObject::Builder()
+                .size(bufferSize)
+                .bindingType(BufferObject::BindingType::SHADER_STORAGE)
+                .name("Velocities")
+                .build(*engine);
+        app.velocitiesBuffer->setBuffer(*engine,
+                BufferObject::BufferDescriptor(app.initialData->velocities.data(), bufferSize, nullptr));
+
+        app.colorsBuffer = BufferObject::Builder()
+                .size(bufferSize)
+                .bindingType(BufferObject::BindingType::SHADER_STORAGE)
+                .name("Colors")
+                .build(*engine);
+        app.colorsBuffer->setBuffer(*engine,
+                BufferObject::BufferDescriptor(app.initialData->colors.data(), bufferSize, nullptr));
 
         app.computeMaterial = Material::Builder()
                 .package(RESOURCES_COMPUTEPARTICLES_DATA, RESOURCES_COMPUTEPARTICLES_SIZE)
                 .build(*engine);
+
+        math::uint3 const groupSize = app.computeMaterial->getGroupSize();
+        app.groupCount = (particleCount + groupSize.x - 1) / groupSize.x;
+
         app.computeInstance = app.computeMaterial->createInstance();
-        app.computeInstance->setParameter("Particles", app.particleBuffer);
+        app.computeInstance->setParameter("Positions", app.positionsBuffer);
+        app.computeInstance->setParameter("Velocities", app.velocitiesBuffer);
+        app.computeInstance->setParameter("Colors", app.colorsBuffer);
+        app.computeInstance->setParameter("count", particleCount);
 
         app.renderMaterial = Material::Builder()
                 .package(RESOURCES_PARTICLERENDER_DATA, RESOURCES_PARTICLERENDER_SIZE)
                 .build(*engine);
         app.renderInstance = app.renderMaterial->createInstance();
-        app.renderInstance->setParameter("Particles", app.particleBuffer);
+        app.renderInstance->setParameter("Positions", app.positionsBuffer);
+        app.renderInstance->setParameter("Colors", app.colorsBuffer);
 
         app.vertexBuffer = VertexBuffer::Builder()
                 .vertexCount(4)
@@ -189,7 +284,7 @@ int main(int argc, char** argv) {
                 .boundingBox({{ -1.6f, -1.6f, -1.6f }, { 1.6f, 1.6f, 1.6f }})
                 .geometry(0, RenderableManager::PrimitiveType::TRIANGLES, app.vertexBuffer, app.indexBuffer)
                 .material(0, app.renderInstance)
-                .instances(PARTICLE_COUNT)
+                .instances(particleCount)
                 .culling(false)
                 .receiveShadows(false)
                 .castShadows(false)
@@ -221,7 +316,9 @@ int main(int argc, char** argv) {
         engine->destroy(app.computeInstance);
         engine->destroy(app.computeMaterial);
 
-        engine->destroy(app.particleBuffer);
+        engine->destroy(app.positionsBuffer);
+        engine->destroy(app.velocitiesBuffer);
+        engine->destroy(app.colorsBuffer);
         engine->destroy(app.vertexBuffer);
         engine->destroy(app.indexBuffer);
     };
@@ -233,11 +330,9 @@ int main(int argc, char** argv) {
         dt = std::clamp(dt, 0.001f, 0.05f);
 
         app.computeInstance->setParameter("deltaTime", dt);
-        engine->dispatch(app.computeInstance, { GROUP_COUNT, 1, 1 });
+        engine->dispatch(app.computeInstance, { app.groupCount, 1, 1 });
     });
 
     FilamentApp::get().run(config, setup, cleanup);
     return 0;
 }
-
-

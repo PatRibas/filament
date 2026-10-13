@@ -318,3 +318,12 @@ Java_com_google_android_filament_Material_nCompile(JNIEnv *env, jclass clazz,
                 JniCallback::postToJavaAndDestroy(jniCallback);
             });
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_Material_nGetGroupSize(JNIEnv* env, jclass,
+        jlong nativeMaterial, jintArray out_) {
+    Material* material = (Material*) nativeMaterial;
+    filament::math::uint3 const groupSize = material->getGroupSize();
+    jint result[3] = { (jint) groupSize.x, (jint) groupSize.y, (jint) groupSize.z };
+    env->SetIntArrayRegion(out_, 0, 3, result);
+}

@@ -270,6 +270,11 @@ value_array<filament::math::float3>("float3")
     .element(&filament::math::float3::y)
     .element(&filament::math::float3::z);
 
+value_array<filament::math::uint3>("uint3")
+    .element(&filament::math::uint3::x)
+    .element(&filament::math::uint3::y)
+    .element(&filament::math::uint3::z);
+
 value_array<filament::math::float4>("float4")
     .element(&filament::math::float4::x)
     .element(&filament::math::float4::y)
@@ -1473,6 +1478,9 @@ class_<Material>("Material")
     .function("getParameterTransformName", EMBIND_LAMBDA(std::string, (Material* self, std::string samplerName), {
         const char* transformName = self->getParameterTransformName(samplerName.c_str());
         return transformName ? std::string(transformName) : std::string();
+    }), allow_raw_pointers())
+    .function("getGroupSize", EMBIND_LAMBDA(filament::math::uint3, (Material* self), {
+        return self->getGroupSize();
     }), allow_raw_pointers());
 
 enum_<Material::UboBatchingMode>("Material$UboBatchingMode")

@@ -31,6 +31,8 @@
 #include <utils/CString.h>
 #include <utils/FixedCapacityVector.h>
 
+#include <math/vec3.h>
+
 #include <array>
 #include <optional>
 #include <tuple>
@@ -119,6 +121,7 @@ public:
     bool getInterpolation(Interpolation* value) const noexcept;
     bool getVertexDomain(VertexDomain* value) const noexcept;
     bool getMaterialDomain(MaterialDomain* domain) const noexcept;
+    bool getGroupSize(filament::math::uint3* groupSize) const noexcept;
     bool getMaterialVariantFilterMask(UserVariantFilterMask* userVariantFilterMask) const noexcept;
 
     bool getShading(Shading*) const noexcept;

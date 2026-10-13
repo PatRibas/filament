@@ -1,5 +1,6 @@
 material {
     name : ParticleRender,
+    featureLevel : 3,
     shadingModel : lit,
     instanced : true,
     culling : none,
@@ -8,12 +9,17 @@ material {
     ],
     buffers : [
         {
-            name : Particles,
+            name : Positions,
             qualifiers : [ readonly ],
             fields : [
-                { name : positions, type : float4[10485760] },
-                { name : velocities, type : float4[10485760] },
-                { name : colors, type : float4[10485760] }
+                { name : data, type : float4[] }
+            ]
+        },
+        {
+            name : Colors,
+            qualifiers : [ readonly ],
+            fields : [
+                { name : data, type : float4[] }
             ]
         }
     ]
@@ -23,7 +29,7 @@ vertex {
     void materialVertex(inout MaterialVertexInputs material) {
         // Orient particle quads as camera-facing billboards in world space.
         uint index = uint(getInstanceIndex());
-        vec3 center = particles.positions[index].xyz;
+        vec3 center = positions.data[index].xyz;
         vec3 local = getPosition().xyz;
 
         vec3 worldCenter = (getWorldFromModelMatrix() * vec4(center, 1.0)).xyz;
@@ -32,7 +38,7 @@ vertex {
 
         vec3 worldPos = worldCenter + (camRight * local.x + camUp * local.y) * 0.025;
         material.worldPosition = vec4(worldPos, 1.0);
-        material.particleColor = particles.colors[index];
+        material.particleColor = colors.data[index];
     }
 }
 
@@ -44,5 +50,3 @@ fragment {
         material.roughness = 1.0;
     }
 }
-
-

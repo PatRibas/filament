@@ -29,6 +29,7 @@
 #include <utils/Invocable.h>
 
 #include <math/mathfwd.h>
+#include <math/vec3.h>
 
 #include <string_view>
 #include <type_traits>
@@ -307,6 +308,9 @@ public:
     //! Returns the material domain of this material.
     //! The material domain determines how the material is used.
     MaterialDomain getMaterialDomain() const noexcept;
+
+    //! Returns the workgroup size of this material (compute domain only).
+    math::uint3 getGroupSize() const noexcept;
 
     //! Returns the default culling mode of this material.
     CullingMode getCullingMode() const noexcept;

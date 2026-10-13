@@ -60,6 +60,7 @@ export type BufferReference = string | ArrayBufferView;
 
 export type float2 = glm.vec2|number[];
 export type float3 = glm.vec3|number[];
+export type uint3 = glm.vec3|number[];
 export type float4 = glm.vec4|number[];
 export type double2 = glm.vec2|number[];
 export type double3 = glm.vec3|number[];
@@ -465,6 +466,7 @@ export class Material {
     public getDefaultInstance(): MaterialInstance;
     public getName(): string;
     public getParameterTransformName(samplerName: string): string;
+    public getGroupSize(): uint3;
 }
 
 export enum Material$UboBatchingMode {

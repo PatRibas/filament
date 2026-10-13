@@ -690,6 +690,30 @@ public class Material {
     }
 
     /**
+     * Returns the workgroup size of this material (compute domain only).
+     *
+     * @return an array of 3 integers representing the X, Y, and Z workgroup sizes.
+     */
+    @NonNull
+    @Size(min = 3)
+    public int[] getGroupSize() {
+        return getGroupSize(new int[3]);
+    }
+
+    /**
+     * Returns the workgroup size of this material (compute domain only).
+     *
+     * @param result an array of at least 3 integers to receive the X, Y, and Z workgroup sizes.
+     * @return the result array passed in.
+     */
+    @NonNull
+    @Size(min = 3)
+    public int[] getGroupSize(@NonNull @Size(min = 3) int[] result) {
+        nGetGroupSize(getNativeObject(), result);
+        return result;
+    }
+
+    /**
      * Returns the default culling mode of this material.
      *
      * @see
@@ -1179,6 +1203,7 @@ public class Material {
     private static native int nGetBlendingMode(long nativeMaterial);
     private static native int nGetTransparencyMode(long nativeMaterial);
     private static native int nGetVertexDomain(long nativeMaterial);
+    private static native void nGetGroupSize(long nativeMaterial, @NonNull int[] result);
     private static native int nGetCullingMode(long nativeMaterial);
     private static native boolean nIsColorWriteEnabled(long nativeMaterial);
     private static native boolean nIsDepthWriteEnabled(long nativeMaterial);

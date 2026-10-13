@@ -164,6 +164,7 @@ public:
     BlendingMode getBlendingMode() const noexcept { return mDefinition.blendingMode; }
     VertexDomain getVertexDomain() const noexcept { return mDefinition.vertexDomain; }
     MaterialDomain getMaterialDomain() const noexcept { return mDefinition.materialDomain; }
+    math::uint3 getGroupSize() const noexcept { return mDefinition.groupSize; }
     CullingMode getCullingMode() const noexcept { return mDefinition.cullingMode; }
     TransparencyMode getTransparencyMode() const noexcept { return mDefinition.transparencyMode; }
     bool isColorWriteEnabled() const noexcept { return mDefinition.rasterState.colorWrite; }

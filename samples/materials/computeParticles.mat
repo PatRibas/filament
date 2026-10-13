@@ -6,16 +6,32 @@ material {
         {
             type : float,
             name : deltaTime
+        },
+        {
+            type : uint,
+            name : count
         }
     ],
     buffers : [
         {
-            name : Particles,
+            name : Positions,
             qualifiers : [],
             fields : [
-                { name : positions, type : float4[10485760] },
-                { name : velocities, type : float4[10485760] },
-                { name : colors, type : float4[10485760] }
+                { name : data, type : float4[] }
+            ]
+        },
+        {
+            name : Velocities,
+            qualifiers : [],
+            fields : [
+                { name : data, type : float4[] }
+            ]
+        },
+        {
+            name : Colors,
+            qualifiers : [],
+            fields : [
+                { name : data, type : float4[] }
             ]
         }
     ]
@@ -25,12 +41,12 @@ compute {
     void compute() {
         uint index = gl_GlobalInvocationID.x;
 
-        if (index >= 10485760u) {
+        if (index >= materialParams.count) {
             return;
         }
 
-        vec3 pos = particles.positions[index].xyz;
-        vec3 vel = particles.velocities[index].xyz;
+        vec3 pos = positions.data[index].xyz;
+        vec3 vel = velocities.data[index].xyz;
 
         float dt = materialParams.deltaTime;
         pos += vel * dt;
@@ -43,9 +59,8 @@ compute {
         if (pos.z < -bound) { pos.z = -bound; vel.z = -vel.z; }
         if (pos.z >  bound) { pos.z =  bound; vel.z = -vel.z; }
 
-        particles.positions[index] = vec4(pos, 1.0);
-        particles.velocities[index] = vec4(vel, 0.0);
-        particles.colors[index] = vec4(clamp(pos * 0.5 + 0.5, 0.05, 1.0), 1.0);
+        positions.data[index] = vec4(pos, 1.0);
+        velocities.data[index] = vec4(vel, 0.0);
+        colors.data[index] = vec4(clamp(pos * 0.5 + 0.5, 0.05, 1.0), 1.0);
     }
 }
-

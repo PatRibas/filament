@@ -16,6 +16,8 @@
 
 #include "SimpleFieldChunk.h"
 
+#include <math/vec3.h>
+
 namespace filamat {
 
 template<>
@@ -46,6 +48,13 @@ template<>
 template<>
 void SimpleFieldChunk<float>::flatten(Flattener &f) {
     f.writeUint32(reinterpret_cast<uint32_t&>(t));
+}
+
+template<>
+void SimpleFieldChunk<filament::math::uint3>::flatten(Flattener &f) {
+    f.writeUint32(t.x);
+    f.writeUint32(t.y);
+    f.writeUint32(t.z);
 }
 
 } // namespace filamat

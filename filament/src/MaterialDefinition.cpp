@@ -369,6 +369,7 @@ void MaterialDefinition::processMain() {
     mMaterialParser->getInterpolation(&interpolation);
     mMaterialParser->getVertexDomain(&vertexDomain);
     mMaterialParser->getMaterialDomain(&materialDomain);
+    mMaterialParser->getGroupSize(&groupSize);
     mMaterialParser->getMaterialVariantFilterMask(&variantFilterMask);
     mMaterialParser->getRequiredAttributes(&requiredAttributes);
     mMaterialParser->getRefractionMode(&refractionMode);

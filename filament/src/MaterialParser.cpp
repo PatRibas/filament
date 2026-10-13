@@ -408,6 +408,17 @@ bool MaterialParser::getMaterialDomain(MaterialDomain* value) const noexcept {
     return mImpl.getFromSimpleChunk(ChunkType::MaterialDomain, reinterpret_cast<uint8_t*>(value));
 }
 
+bool MaterialParser::getGroupSize(filament::math::uint3* value) const noexcept {
+    ChunkContainer const& chunkContainer = mImpl.mChunkContainer;
+    ChunkContainer::ChunkDesc chunkDesc;
+    if (chunkContainer.hasChunk(MaterialGroupSize, &chunkDesc)) {
+        Unflattener unflattener(chunkDesc.start, chunkDesc.start + chunkDesc.size);
+        return unflattener.read(&value->x) && unflattener.read(&value->y) &&
+                unflattener.read(&value->z);
+    }
+    return false;
+}
+
 bool MaterialParser::getBlendingMode(BlendingMode* value) const noexcept {
     static_assert(sizeof(BlendingMode) == sizeof(uint8_t),
             "BlendingMode expected size is wrong");

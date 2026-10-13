@@ -1834,6 +1834,8 @@ void MaterialBuilder::writeCommonChunks(ChunkContainer& container, MaterialInfo&
         }
         container.emplace<uint64_t>(MaterialProperties, properties);
         container.emplace<uint8_t>(MaterialStereoscopicType, static_cast<uint8_t>(mStereoscopicType));
+    } else {
+        container.emplace<filament::math::uint3>(MaterialGroupSize, mGroupSize);
     }
 
     // create a unique material id

@@ -62,6 +62,10 @@ MaterialDomain Material::getMaterialDomain() const noexcept {
     return downcast(this)->getMaterialDomain();
 }
 
+math::uint3 Material::getGroupSize() const noexcept {
+    return downcast(this)->getGroupSize();
+}
+
 CullingMode Material::getCullingMode() const noexcept {
     return downcast(this)->getCullingMode();
 }

@@ -40,14 +40,13 @@ using utils::EntityManager;
 namespace {
 
 static constexpr uint32_t TEXTURE_SIZE = 512;
-static constexpr uint32_t GROUP_SIZE = 8;
 static constexpr math::float3 QUAD_VERTICES[] = {
-        { -0.5f, -0.5f, 0.0f },
-        {  0.5f, -0.5f, 0.0f },
-        { -0.5f,  0.5f, 0.0f },
-        {  0.5f, -0.5f, 0.0f },
-        {  0.5f,  0.5f, 0.0f },
-        { -0.5f,  0.5f, 0.0f },
+    { -0.5f, -0.5f, 0.0f },
+    { 0.5f, -0.5f, 0.0f },
+    { -0.5f, 0.5f, 0.0f },
+    { 0.5f, -0.5f, 0.0f },
+    { 0.5f, 0.5f, 0.0f },
+    { -0.5f, 0.5f, 0.0f },
 };
 
 struct App {
@@ -61,6 +60,7 @@ struct App {
     Texture* texture = nullptr;
     VertexBuffer* vertexBuffer = nullptr;
     Skybox* skybox = nullptr;
+    math::uint3 groupCount{ 1, 1, 1 };
 };
 
 } // namespace
@@ -77,36 +77,42 @@ int main(int argc, char** argv) {
     App app;
     auto setup = [&app](Engine* engine, View* view, Scene* scene) {
         app.texture = Texture::Builder()
-                .width(TEXTURE_SIZE)
-                .height(TEXTURE_SIZE)
-                .levels(1)
-                .sampler(Texture::Sampler::SAMPLER_2D)
-                .format(Texture::InternalFormat::RGBA8)
-                .usage(Texture::Usage::SAMPLEABLE | Texture::Usage::STORAGE)
-                .build(*engine);
+                              .width(TEXTURE_SIZE)
+                              .height(TEXTURE_SIZE)
+                              .levels(1)
+                              .sampler(Texture::Sampler::SAMPLER_2D)
+                              .format(Texture::InternalFormat::RGBA8)
+                              .usage(Texture::Usage::SAMPLEABLE | Texture::Usage::STORAGE)
+                              .build(*engine);
 
-        app.computeMaterial = Material::Builder()
-                .package(RESOURCES_COMPUTETEXTURE_DATA, RESOURCES_COMPUTETEXTURE_SIZE)
-                .build(*engine);
+        app.computeMaterial =
+                Material::Builder()
+                        .package(RESOURCES_COMPUTETEXTURE_DATA, RESOURCES_COMPUTETEXTURE_SIZE)
+                        .build(*engine);
+        math::uint3 const groupSize = app.computeMaterial->getGroupSize();
+        app.groupCount = { (TEXTURE_SIZE + groupSize.x - 1) / groupSize.x,
+            (TEXTURE_SIZE + groupSize.y - 1) / groupSize.y, 1 };
         app.computeInstance = app.computeMaterial->createInstance();
         app.computeInstance->setParameter("outputTexture", app.texture);
 
         app.displayMaterial = Material::Builder()
-                .package(RESOURCES_PROCEDURALTEXTUREQUAD_DATA, RESOURCES_PROCEDURALTEXTUREQUAD_SIZE)
-                .build(*engine);
+                                      .package(RESOURCES_PROCEDURALTEXTUREQUAD_DATA,
+                                              RESOURCES_PROCEDURALTEXTUREQUAD_SIZE)
+                                      .build(*engine);
         app.displayInstance = app.displayMaterial->createInstance();
         app.displayInstance->setParameter("albedo", app.texture, TextureSampler{});
 
         app.vertexBuffer = VertexBuffer::Builder()
-                .vertexCount(6)
-                .bufferCount(1)
-                .attribute(VertexAttribute::POSITION, 0, VertexBuffer::AttributeType::FLOAT3)
-                .build(*engine);
+                                   .vertexCount(6)
+                                   .bufferCount(1)
+                                   .attribute(VertexAttribute::POSITION, 0,
+                                           VertexBuffer::AttributeType::FLOAT3)
+                                   .build(*engine);
         app.vertexBuffer->setBufferAt(*engine, 0,
                 VertexBuffer::BufferDescriptor(QUAD_VERTICES, sizeof(QUAD_VERTICES)));
         app.renderable = EntityManager::get().create();
         RenderableManager::Builder(1)
-                .boundingBox({{ -0.5f, -0.5f, -0.01f }, { 0.5f, 0.5f, 0.01f }})
+                .boundingBox({ { -0.5f, -0.5f, -0.01f }, { 0.5f, 0.5f, 0.01f } })
                 .geometry(0, RenderableManager::PrimitiveType::TRIANGLES, app.vertexBuffer)
                 .material(0, app.displayInstance)
                 .culling(false)
@@ -115,7 +121,7 @@ int main(int argc, char** argv) {
                 .build(*engine, app.renderable);
         scene->addEntity(app.renderable);
 
-        app.skybox = Skybox::Builder().color({0.1f, 0.125f, 0.25f, 1.0f}).build(*engine);
+        app.skybox = Skybox::Builder().color({ 0.1f, 0.125f, 0.25f, 1.0f }).build(*engine);
         scene->setSkybox(app.skybox);
         view->setPostProcessingEnabled(false);
 
@@ -139,11 +145,10 @@ int main(int argc, char** argv) {
 
     FilamentApp::get().animate([&app](Engine* engine, View* view, double time) {
         float const aspect = float(view->getViewport().width) / float(view->getViewport().height);
-        app.camera->setProjection(Camera::Projection::ORTHO,
-                -aspect, aspect, -1.0f, 1.0f, 0.0f, 1.0f);
+        app.camera->setProjection(Camera::Projection::ORTHO, -aspect, aspect, -1.0f, 1.0f, 0.0f,
+                1.0f);
         app.computeInstance->setParameter("time", float(time));
-        engine->dispatch(app.computeInstance,
-                { TEXTURE_SIZE / GROUP_SIZE, TEXTURE_SIZE / GROUP_SIZE, 1 });
+        engine->dispatch(app.computeInstance, app.groupCount);
     });
 
     FilamentApp::get().run(config, setup, cleanup);
