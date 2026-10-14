@@ -2979,8 +2979,12 @@ bool OpenGLDriver::isRenderTargetFormatSupported(TextureFormat const format) {
 }
 
 bool OpenGLDriver::isFrameBufferFetchSupported() {
+#ifdef BACKEND_OPENGL_VERSION_GL
+    return false;
+#else
     auto const& gl = getBackendState();
     return gl.ext.EXT_shader_framebuffer_fetch;
+#endif
 }
 
 bool OpenGLDriver::isFrameBufferFetchMultiSampleSupported() {

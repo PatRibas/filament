@@ -539,10 +539,25 @@ try {
 } catch (Panic const& e) {
     LOG(ERROR) << "Filament exception (terminate cleanly): " << e.what();
     LOG(ERROR) << e.getCallStack();
+    mClosed = true;
+    try {
+        shutdown();
+    } catch (...) {}
+    return true;
 } catch (std::exception const& e) {
     LOG(ERROR) << "System exception (terminate cleanly): " << e.what();
+    mClosed = true;
+    try {
+        shutdown();
+    } catch (...) {}
+    return true;
 } catch (...) {
     LOG(ERROR) << "Unknown exception! (terminate cleanly)";
+    mClosed = true;
+    try {
+        shutdown();
+    } catch (...) {}
+    return true;
 }
 #endif
     return false;
