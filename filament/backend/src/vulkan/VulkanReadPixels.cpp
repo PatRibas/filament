@@ -393,6 +393,154 @@ void VulkanReadPixels::run(fvkmemory::resource_ptr<VulkanTexture> srcTexture, ui
     mTaskHandler->post(std::move(waitFenceFunc), std::move(cleanPbdFunc));
 }
 
+void VulkanReadPixels::run(fvkmemory::resource_ptr<VulkanBufferObject> srcBufferObject,
+        uint32_t const offset, uint32_t const size, uint32_t const graphicsQueueFamilyIndex,
+        BufferDescriptor&& bd, SelecteMemoryFunction const& selectMemoryFunc,
+        OnReadBufferCompleteFunction const& readCompleteFunc) {
+    assert_invariant(mDevice != VK_NULL_HANDLE);
+    assert_invariant(srcBufferObject);
+
+    if (size == 0 || !bd.buffer || bd.size == 0) {
+        readCompleteFunc(std::move(bd));
+        return;
+    }
+
+    VkDevice& device = mDevice;
+
+    if (mCommandPool == VK_NULL_HANDLE) {
+        VkCommandPoolCreateInfo const createInfo = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+                     | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+            .queueFamilyIndex = graphicsQueueFamilyIndex,
+        };
+        vkCreateCommandPool(device, &createInfo, VKALLOC, &mCommandPool);
+    }
+
+    if (!mTaskHandler) {
+        mTaskHandler = std::make_unique<TaskHandler>();
+    }
+
+    VkCommandPool const cmdpool = mCommandPool;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkMemoryRequirements memReqs;
+
+    VkBufferCreateInfo const bufferInfo = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+    vkCreateBuffer(device, &bufferInfo, VKALLOC, &stagingBuffer);
+    vkGetBufferMemoryRequirements(device, stagingBuffer, &memReqs);
+
+    VkDeviceMemory stagingMemory;
+    uint32_t memoryTypeIndex = selectMemoryFunc(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                    | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+
+    if (memoryTypeIndex >= VK_MAX_MEMORY_TYPES) {
+        memoryTypeIndex = selectMemoryFunc(memReqs.memoryTypeBits,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    }
+
+    FILAMENT_CHECK_POSTCONDITION(memoryTypeIndex < VK_MAX_MEMORY_TYPES)
+            << "VulkanReadPixels: unable to find a memory type that meets requirements.";
+
+    VkMemoryAllocateInfo const allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memReqs.size,
+        .memoryTypeIndex = memoryTypeIndex,
+    };
+
+    vkAllocateMemory(device, &allocInfo, VKALLOC, &stagingMemory);
+    vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+
+    VkCommandBuffer cmdbuffer;
+    VkCommandBufferAllocateInfo const allocateInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = cmdpool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    vkAllocateCommandBuffers(device, &allocateInfo, &cmdbuffer);
+
+    VkCommandBufferBeginInfo const binfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    vkBeginCommandBuffer(cmdbuffer, &binfo);
+
+    VkBufferMemoryBarrier const barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = srcBufferObject->getVkBuffer(),
+        .offset = offset,
+        .size = size,
+    };
+    vkCmdPipelineBarrier(cmdbuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+
+    VkBufferCopy const region = {
+        .srcOffset = offset,
+        .dstOffset = 0,
+        .size = size,
+    };
+    vkCmdCopyBuffer(cmdbuffer, srcBufferObject->getVkBuffer(), stagingBuffer, 1, &region);
+
+    vkEndCommandBuffer(cmdbuffer);
+
+    VkQueue queue;
+    vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &queue);
+    VkFence readCompleteFence;
+    VkFenceCreateInfo const fenceCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
+    vkCreateFence(device, &fenceCreateInfo, VKALLOC, &readCompleteFence);
+    VkSubmitInfo const submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = VK_NULL_HANDLE,
+        .pWaitDstStageMask = VK_NULL_HANDLE,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmdbuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = VK_NULL_HANDLE,
+    };
+    vkQueueSubmit(queue, 1, &submitInfo, readCompleteFence);
+
+    auto* const pUserBuffer = new BufferDescriptor(std::move(bd));
+    auto cleanBdFunc = [pUserBuffer, readCompleteFunc]() {
+        BufferDescriptor& p = *pUserBuffer;
+        readCompleteFunc(std::move(p));
+        delete pUserBuffer;
+    };
+    auto waitFenceFunc = [device, size, stagingBuffer, stagingMemory, cmdpool, cmdbuffer,
+                                 pUserBuffer, fence = readCompleteFence]() mutable {
+        VkResult const status = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        if (status != VK_SUCCESS) {
+            FVK_LOGE << "Failed to wait for readBufferSubData fence";
+            return;
+        }
+
+        BufferDescriptor& p = *pUserBuffer;
+
+        void const* srcData = nullptr;
+        vkMapMemory(device, stagingMemory, 0, VK_WHOLE_SIZE, 0, (void**) &srcData);
+        memcpy(p.buffer, srcData, std::min<size_t>(size, p.size));
+        vkUnmapMemory(device, stagingMemory);
+
+        vkDestroyBuffer(device, stagingBuffer, VKALLOC);
+        vkFreeMemory(device, stagingMemory, VKALLOC);
+        vkDestroyFence(device, fence, VKALLOC);
+        vkFreeCommandBuffers(device, cmdpool, 1, &cmdbuffer);
+    };
+    mTaskHandler->post(std::move(waitFenceFunc), std::move(cleanBdFunc));
+}
+
 void VulkanReadPixels::runUntilComplete() {
     if (!mTaskHandler) {
         return;

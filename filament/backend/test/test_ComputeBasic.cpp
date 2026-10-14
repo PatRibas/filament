@@ -209,7 +209,8 @@ void main() {
     ProgramHandle const computeProgram = driver.createProgram(std::move(program));
 
     driver.dispatchCompute(computeProgram, { GROUP_COUNT, 1, 1 });
-    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL ||
+            getBackend() == Backend::VULKAN) {
         driver.readBufferSubData(output, 0, BUFFER_SIZE, { readback.data(), BUFFER_SIZE });
     }
     driver.destroyProgram(computeProgram);
@@ -221,7 +222,8 @@ void main() {
 
     executeCommands();
 
-    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL ||
+            getBackend() == Backend::VULKAN) {
         for (uint32_t i = 0; i < ELEMENT_COUNT; i++) {
             EXPECT_FLOAT_EQ(readback[i], 1.0f);
         }
@@ -255,7 +257,8 @@ void main() {
 
     std::vector<uint8_t> pixels(TEXTURE_SIZE * TEXTURE_SIZE * 4, 0);
     driver.dispatchCompute(computeProgram, { 1, 1, 1 });
-    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL ||
+            getBackend() == Backend::VULKAN) {
         driver.readTexture(texture, 0, 0, 0, 0, TEXTURE_SIZE, TEXTURE_SIZE,
                 PixelBufferDescriptor(pixels.data(), pixels.size(),
                         PixelDataFormat::RGBA, PixelDataType::UBYTE));
@@ -268,7 +271,8 @@ void main() {
 
     executeCommands();
 
-    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL) {
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL ||
+            getBackend() == Backend::VULKAN) {
         for (size_t i = 0; i < pixels.size(); i += 4) {
             EXPECT_EQ(pixels[i + 0], 255);
             EXPECT_EQ(pixels[i + 1], 0);

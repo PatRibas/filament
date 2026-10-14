@@ -135,8 +135,10 @@ VulkanGpuBuffer const* VulkanBufferCache::allocate(VulkanBufferBinding binding,
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = numBytes,
         // `VK_BUFFER_USAGE_TRANSFER_DST_BIT` is needed to allow updating the buffer through
-        // a staging using `vkCmdCopyBuffer`.
-        .usage = getVkBufferUsage(binding) | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        // a staging using `vkCmdCopyBuffer`. `VK_BUFFER_USAGE_TRANSFER_SRC_BIT` is needed to
+        // allow reading back the buffer through `readBufferSubData`.
+        .usage = getVkBufferUsage(binding) | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     };
 
     VmaAllocationCreateFlags vmaFlags = 0;

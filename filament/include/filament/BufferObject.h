@@ -134,6 +134,24 @@ public:
     void setBuffer(Engine& engine, BufferDescriptor&& buffer, uint32_t byteOffset = 0);
 
     /**
+     * Asynchronously reads back a region of this BufferObject into the data buffer provided.
+     *
+     * After issuing this method, the callback associated with `buffer` will be invoked on the
+     * main thread, indicating that the read-back has completed.
+     *
+     * It is also possible to use a Fence or Engine::flushAndWait() to wait for the read-back.
+     *
+     * @param engine Reference to the filament::Engine associated with this BufferObject.
+     * @param buffer A BufferDescriptor representing the client-side buffer where the read-back
+     *               will be written.
+     * @param byteOffset Offset in bytes into the BufferObject. Must be multiple of 4.
+     *
+     * @exception utils::PreConditionPanic if byteOffset is not a multiple of 4, or if the
+     *            requested range exceeds the size of the BufferObject.
+     */
+    void readBuffer(Engine& engine, BufferDescriptor&& buffer, uint32_t byteOffset = 0);
+
+    /**
      * Returns the size of this BufferObject in elements.
      * @return The maximum capacity of the BufferObject.
      */

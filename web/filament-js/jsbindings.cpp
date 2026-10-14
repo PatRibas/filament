@@ -1410,6 +1410,10 @@ class_<BufferObject>("BufferObject")
    .function("_setBuffer", EMBIND_LAMBDA(void, (BufferObject* self,
            Engine* engine, BufferDescriptor bd, uint32_t byteOffset), {
        self->setBuffer(*engine, std::move(*bd.bd), byteOffset);
+   }), allow_raw_pointers())
+   .function("_readBuffer", EMBIND_LAMBDA(void, (BufferObject* self,
+           Engine* engine, BufferDescriptor bd, uint32_t byteOffset), {
+       self->readBuffer(*engine, std::move(*bd.bd), byteOffset);
    }), allow_raw_pointers());
 
 class_<VertexBuilder>("VertexBuffer$Builder")

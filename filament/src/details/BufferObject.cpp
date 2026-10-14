@@ -92,4 +92,14 @@ void FBufferObject::setBuffer(FEngine& engine, BufferDescriptor&& buffer, uint32
     engine.getDriverApi().updateBufferObject(mHandle, std::move(buffer), byteOffset);
 }
 
+void FBufferObject::readBuffer(FEngine& engine, BufferDescriptor&& buffer, uint32_t const byteOffset) {
+
+    FILAMENT_CHECK_PRECONDITION((byteOffset & 0x3) == 0)
+            << "byteOffset must be a multiple of 4";
+    FILAMENT_CHECK_PRECONDITION(byteOffset <= mByteCount && buffer.size <= mByteCount - byteOffset)
+            << "readBuffer range is outside the buffer.";
+
+    engine.getDriverApi().readBufferSubData(mHandle, byteOffset, buffer.size, std::move(buffer));
+}
+
 } // namespace filament

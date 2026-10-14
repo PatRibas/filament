@@ -33,6 +33,7 @@
 
 namespace filament::backend {
 
+struct VulkanBufferObject;
 struct VulkanRenderTarget;
 struct VulkanTexture;
 
@@ -70,6 +71,7 @@ public:
     };
 
     using OnReadCompleteFunction = std::function<void(PixelBufferDescriptor&&)>;
+    using OnReadBufferCompleteFunction = std::function<void(BufferDescriptor&&)>;
     using SelecteMemoryFunction = std::function<uint32_t(uint32_t, VkFlags)>;
 
     explicit VulkanReadPixels(VkDevice device);
@@ -86,6 +88,11 @@ public:
             uint32_t graphicsQueueFamilyIndex, PixelBufferDescriptor&& pbd,
             SelecteMemoryFunction const& selectMemoryFunc,
             OnReadCompleteFunction const& readCompleteFunc);
+
+    void run(fvkmemory::resource_ptr<VulkanBufferObject> srcBufferObject, uint32_t offset,
+            uint32_t size, uint32_t graphicsQueueFamilyIndex, BufferDescriptor&& bd,
+            SelecteMemoryFunction const& selectMemoryFunc,
+            OnReadBufferCompleteFunction const& readCompleteFunc);
 
     // This method will block until all of the in-flight requests are complete.
     void runUntilComplete();

@@ -2669,8 +2669,15 @@ void VulkanDriver::readTexture(Handle<HwTexture> src, uint8_t level, uint16_t la
 
 void VulkanDriver::readBufferSubData(backend::BufferObjectHandle boh,
         uint32_t offset, uint32_t size, backend::BufferDescriptor&& p) {
-    // TODO: implement readBufferSubData
-    scheduleDestroy(std::move(p));
+    auto srcBuffer = resource_ptr<VulkanBufferObject>::cast(&mResourceManager, boh);
+    endCommandRecording();
+    mReadPixels.run(
+            srcBuffer, offset, size, mPlatform->getGraphicsQueueFamilyIndex(),
+            std::move(p),
+            [&context = mContext](uint32_t types, VkFlags reqs) {
+                return context.selectMemoryType(types, reqs);
+            },
+            [this](BufferDescriptor&& bd) { scheduleDestroy(std::move(bd)); });
 }
 
 void VulkanDriver::resolve(

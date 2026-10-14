@@ -189,6 +189,58 @@ public class BufferObject {
         }
     }
 
+    /**
+     * Asynchronously reads back this <code>BufferObject</code> into the buffer provided.
+     *
+     * @param engine            reference to the {@link Engine} to associate this
+     *                          <code>BufferObject</code> with
+     * @param buffer            a CPU-side {@link Buffer} where the read-back will be written.
+     */
+    public void readBuffer(@NonNull Engine engine, @NonNull Buffer buffer) {
+        readBuffer(engine, buffer, 0, 0, null, null);
+    }
+
+    /**
+     * Asynchronously reads back a region of this <code>BufferObject</code> into the buffer
+     * provided.
+     *
+     * @param engine            reference to the {@link Engine} to associate this
+     *                          <code>BufferObject</code> with
+     * @param buffer            a CPU-side {@link Buffer} where the read-back will be written.
+     * @param srcOffsetInBytes  offset in <i>bytes</i> into the <code>BufferObject</code>
+     * @param count             number of elements to read, defaults to
+     *                          <code>buffer.remaining()</code>
+     */
+    public void readBuffer(@NonNull Engine engine, @NonNull Buffer buffer,
+            @IntRange(from = 0) int srcOffsetInBytes, @IntRange(from = 0) int count) {
+        readBuffer(engine, buffer, srcOffsetInBytes, count, null, null);
+    }
+
+    /**
+     * Asynchronously reads back a region of this <code>BufferObject</code> into the buffer
+     * provided.
+     *
+     * @param engine            reference to the {@link Engine} to associate this
+     *                          <code>BufferObject</code> with
+     * @param buffer            a CPU-side {@link Buffer} where the read-back will be written.
+     * @param srcOffsetInBytes  offset in <i>bytes</i> into the <code>BufferObject</code>
+     * @param count             number of elements to read, defaults to
+     *                          <code>buffer.remaining()</code>
+     * @param handler           an {@link java.util.concurrent.Executor Executor}. On Android this
+     *                          can also be a {@link android.os.Handler Handler}.
+     * @param callback          a callback executed by <code>handler</code> when the read-back
+     *                          has completed.
+     */
+    public void readBuffer(@NonNull Engine engine, @NonNull Buffer buffer,
+            @IntRange(from = 0) int srcOffsetInBytes, @IntRange(from = 0) int count,
+            @Nullable Object handler, @Nullable Runnable callback) {
+        int result = nReadBuffer(getNativeObject(), engine.getNativeObject(), buffer, buffer.remaining(),
+                srcOffsetInBytes, count == 0 ? buffer.remaining() : count, handler, callback);
+        if (result < 0) {
+            throw new BufferOverflowException();
+        }
+    }
+
     public long getNativeObject() {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Calling method on destroyed BufferObject");
@@ -210,4 +262,7 @@ public class BufferObject {
     private static native int nSetBuffer(long nativeBufferObject, long nativeEngine,
             Buffer buffer, int remaining,
             int destOffsetInBytes, int count, Object handler, Runnable callback);
+    private static native int nReadBuffer(long nativeBufferObject, long nativeEngine,
+            Buffer buffer, int remaining,
+            int srcOffsetInBytes, int count, Object handler, Runnable callback);
 }

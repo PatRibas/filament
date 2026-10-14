@@ -432,6 +432,7 @@ export class VertexBuffer {
 export class BufferObject {
     public static Builder(): BufferObject$Builder;
     public setBuffer(engine: Engine, data: BufferReference, byteOffset?: number): void;
+    public readBuffer(engine: Engine, data: BufferReference, byteOffset?: number): void;
     public getByteCount(): number;
 }
 

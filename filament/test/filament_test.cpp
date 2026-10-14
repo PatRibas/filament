@@ -29,6 +29,7 @@
 #include <private/filament/BufferInterfaceBlock.h>
 
 #include <filament/Box.h>
+#include <filament/BufferObject.h>
 #include <filament/Camera.h>
 #include <filament/Color.h>
 #include <filament/ColorGrading.h>
@@ -1763,6 +1764,38 @@ TEST(FilamentTest, FrameHistoryStreamTest) {
 
     engine->destroy(swapChain);
     engine->destroy(renderer);
+    Engine::destroy(&engine);
+}
+
+TEST(FilamentTest, BufferObjectReadBufferTest) {
+    Engine* engine = Engine::create(Engine::Backend::NOOP);
+
+    BufferObject* bo = BufferObject::Builder()
+            .size(64)
+            .bindingType(BufferObject::BindingType::SHADER_STORAGE)
+            .build(*engine);
+
+    std::array<float, 16> readback{};
+    bool callbackInvoked = false;
+    bo->readBuffer(*engine, BufferObject::BufferDescriptor(
+            readback.data(), sizeof(readback),
+            [](void*, size_t, void* user) {
+                *static_cast<bool*>(user) = true;
+            }, &callbackInvoked));
+
+    engine->flushAndWait();
+    EXPECT_TRUE(callbackInvoked);
+
+#if UTILS_HAS_EXCEPTIONS
+    // byteOffset must be a multiple of 4
+    EXPECT_THROW(bo->readBuffer(*engine,
+            BufferObject::BufferDescriptor(readback.data(), 16), 2), utils::PreConditionPanic);
+    // Out-of-bounds read should throw PreConditionPanic
+    EXPECT_THROW(bo->readBuffer(*engine,
+            BufferObject::BufferDescriptor(readback.data(), 64), 4), utils::PreConditionPanic);
+#endif
+
+    engine->destroy(bo);
     Engine::destroy(&engine);
 }
 

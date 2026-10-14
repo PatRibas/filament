@@ -106,3 +106,31 @@ Java_com_google_android_filament_BufferObject_nSetBuffer(JNIEnv *env, jclass typ
         return 0;
     });
 }
+
+extern "C" JNIEXPORT int JNICALL
+Java_com_google_android_filament_BufferObject_nReadBuffer(JNIEnv *env, jclass type,
+        jlong nativeBufferObject, jlong nativeEngine, jobject buffer, int remaining,
+        jint srcOffsetInBytes, jint count,
+        jobject handler, jobject runnable) {
+    BufferObject *bufferObject = (BufferObject *) nativeBufferObject;
+    Engine *engine = (Engine *) nativeEngine;
+
+    return filament::android::wrapJni<int>(env, [=]() {
+        AutoBuffer nioBuffer(env, buffer, count, true);
+        void* data = nioBuffer.getData();
+        size_t sizeInBytes = nioBuffer.getSize();
+        if (sizeInBytes > (remaining << nioBuffer.getShift())) {
+            // BufferOverflowException
+            return -1;
+        }
+
+        auto* callback = JniBufferCallback::make(engine, env, handler, runnable, std::move(nioBuffer));
+
+        BufferDescriptor desc(data, sizeInBytes,
+                callback->getHandler(), &JniBufferCallback::postToJavaAndDestroy, callback);
+
+        bufferObject->readBuffer(*engine, std::move(desc), (uint32_t) srcOffsetInBytes);
+
+        return 0;
+    });
+}

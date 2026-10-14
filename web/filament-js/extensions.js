@@ -384,6 +384,16 @@ Filament.loadClassExtensions = function() {
         buffer.delete();
     };
 
+    /// readBuffer ::method::
+    /// engine ::argument:: [Engine]
+    /// buffer ::argument:: [Buffer]
+    /// byteOffset ::argument:: non-negative integer
+    Filament.BufferObject.prototype.readBuffer = function(engine, buffer, byteOffset = 0) {
+        buffer = getBufferDescriptor(buffer);
+        this._readBuffer(engine, buffer, byteOffset);
+        buffer.delete();
+    };
+
     /// VertexBuffer ::core class::
 
     /// setBufferAt ::method::

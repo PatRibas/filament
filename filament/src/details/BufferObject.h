@@ -45,6 +45,7 @@ public:
 private:
     friend class BufferObject;
     void setBuffer(FEngine& engine, BufferDescriptor&& buffer, uint32_t byteOffset = 0);
+    void readBuffer(FEngine& engine, BufferDescriptor&& buffer, uint32_t byteOffset = 0);
     backend::Handle<backend::HwBufferObject> mHandle;
     uint32_t mByteCount;
     BindingType mBindingType;
