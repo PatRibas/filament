@@ -308,6 +308,30 @@ const char* toString(backend::DescriptorType type) noexcept {
             return "storage image2d int";
         case backend::DescriptorType::STORAGE_IMAGE_2D_UINT:
             return "storage image2d uint";
+        case backend::DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:
+            return "storage image2d array float";
+        case backend::DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:
+            return "storage image2d array int";
+        case backend::DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:
+            return "storage image2d array uint";
+        case backend::DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:
+            return "storage imagecube float";
+        case backend::DescriptorType::STORAGE_IMAGE_CUBE_INT:
+            return "storage imagecube int";
+        case backend::DescriptorType::STORAGE_IMAGE_CUBE_UINT:
+            return "storage imagecube uint";
+        case backend::DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT:
+            return "storage imagecube array float";
+        case backend::DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:
+            return "storage imagecube array int";
+        case backend::DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:
+            return "storage imagecube array uint";
+        case backend::DescriptorType::STORAGE_IMAGE_3D_FLOAT:
+            return "storage image3d float";
+        case backend::DescriptorType::STORAGE_IMAGE_3D_INT:
+            return "storage image3d int";
+        case backend::DescriptorType::STORAGE_IMAGE_3D_UINT:
+            return "storage image3d uint";
         case backend::DescriptorType::UNIFORM_BUFFER:
             return "uniform buffer";
         case backend::DescriptorType::SHADER_STORAGE_BUFFER:

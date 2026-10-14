@@ -130,6 +130,7 @@ private:
     // A storage image descriptor
     struct StorageImage {
         TextureHandle handle;                   // 4
+        GLboolean layered = GL_FALSE;           // 1
     };
 
     struct Descriptor {

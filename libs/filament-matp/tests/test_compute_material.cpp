@@ -205,3 +205,72 @@ TEST(TestParseAndComputeMaterial, ImageQualifierRestrict) {
     )");
 }
 
+TEST(TestParseAndComputeMaterial, ImageType2DArray) {
+    expectValidComputeMaterial(R"(
+        material {
+            name: test_img_2d_array,
+            domain: compute,
+            groupSize: [4, 4, 1],
+            images: [ { name: img, type: image2dArray, format: rgba8, qualifiers: [writeonly] } ]
+        }
+        compute {
+            void compute() {
+                ivec3 c = ivec3(gl_GlobalInvocationID.xyz);
+                imageStore(img, c, vec4(1.0));
+            }
+        }
+    )");
+}
+
+TEST(TestParseAndComputeMaterial, ImageType3D) {
+    expectValidComputeMaterial(R"(
+        material {
+            name: test_img_3d,
+            domain: compute,
+            groupSize: [4, 4, 4],
+            images: [ { name: img, type: image3d, format: r32f } ]
+        }
+        compute {
+            void compute() {
+                ivec3 c = ivec3(gl_GlobalInvocationID.xyz);
+                imageStore(img, c, imageLoad(img, c) + vec4(1.0));
+            }
+        }
+    )");
+}
+
+TEST(TestParseAndComputeMaterial, ImageTypeCubemap) {
+    expectValidComputeMaterial(R"(
+        material {
+            name: test_img_cubemap,
+            domain: compute,
+            groupSize: [4, 4, 1],
+            images: [ { name: img, type: imageCubemap, format: rgba8, qualifiers: [writeonly] } ]
+        }
+        compute {
+            void compute() {
+                ivec3 c = ivec3(gl_GlobalInvocationID.xyz);
+                imageStore(img, c, vec4(1.0));
+            }
+        }
+    )");
+}
+
+TEST(TestParseAndComputeMaterial, ImageTypeCubemapArray) {
+    expectValidComputeMaterial(R"(
+        material {
+            name: test_img_cubemap_array,
+            domain: compute,
+            groupSize: [4, 4, 1],
+            images: [ { name: img, type: imageCubemapArray, format: rgba8, qualifiers: [writeonly] } ]
+        }
+        compute {
+            void compute() {
+                ivec3 c = ivec3(gl_GlobalInvocationID.xyz);
+                imageStore(img, c, vec4(1.0));
+            }
+        }
+    )");
+}
+
+

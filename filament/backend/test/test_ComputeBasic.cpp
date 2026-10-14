@@ -99,9 +99,7 @@ Program createComputeProgram(const char* shaderSource, Backend backend = Backend
                         break;
                     }
                 }
-            } else if (d.type == DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
-                       d.type == DescriptorType::STORAGE_IMAGE_2D_INT ||
-                       d.type == DescriptorType::STORAGE_IMAGE_2D_UINT) {
+            } else if (DescriptorSetLayoutDescriptor::isStorageImage(d.type)) {
                 for (auto const& img : resources.storage_images) {
                     if (glslCompiler.get_decoration(img.id, spv::DecorationBinding) == d.binding) {
                         name = utils::CString(img.name.c_str());

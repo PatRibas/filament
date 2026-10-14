@@ -1506,6 +1506,49 @@ TEST_F(MaterialCompiler, ComputeMaterialImageQualifierRestrict) {
     EXPECT_TRUE(result.isValid());
 }
 
+TEST_F(MaterialCompiler, ComputeMaterialImageTypes2DArray3DCube) {
+    using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+    using SamplerType = MaterialBuilder::SamplerType;
+    const std::string computeCode(R"(
+        void compute() {
+            ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
+            imageStore(img2dArray, coord, vec4(1.0));
+            imageStore(img3d, coord, ivec4(2));
+            imageStore(imgCube, coord, uvec4(3u));
+            imageStore(imgCubeArray, coord, vec4(4.0));
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageTypes");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 4, 4, 1 });
+    builder.image("img2dArray", "rgba8", uint8_t(Qualifier::WRITEONLY),
+            SamplerType::SAMPLER_2D_ARRAY);
+    builder.image("img3d", "rgba8i", uint8_t(Qualifier::WRITEONLY),
+            SamplerType::SAMPLER_3D);
+    builder.image("imgCube", "rgba8ui", uint8_t(Qualifier::WRITEONLY),
+            SamplerType::SAMPLER_CUBEMAP);
+    builder.image("imgCubeArray", "r32f", uint8_t(Qualifier::WRITEONLY),
+            SamplerType::SAMPLER_CUBEMAP_ARRAY);
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("rgba8) uniform writeonly image2DArray img2dArray;"), std::string::npos);
+    EXPECT_NE(glsl.find("rgba8i) uniform writeonly iimage3D img3d;"), std::string::npos);
+    EXPECT_NE(glsl.find("rgba8ui) uniform writeonly uimageCube imgCube;"), std::string::npos);
+    EXPECT_NE(glsl.find("r32f) uniform writeonly imageCubeArray imgCubeArray;"), std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     const int rv = RUN_ALL_TESTS();

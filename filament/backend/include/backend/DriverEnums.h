@@ -313,6 +313,22 @@ constexpr std::string_view to_string(TextureType type) noexcept {
      STORAGE_IMAGE_2D_FLOAT,
      STORAGE_IMAGE_2D_INT,
      STORAGE_IMAGE_2D_UINT,
+
+     STORAGE_IMAGE_2D_ARRAY_FLOAT,
+     STORAGE_IMAGE_2D_ARRAY_INT,
+     STORAGE_IMAGE_2D_ARRAY_UINT,
+
+     STORAGE_IMAGE_CUBE_FLOAT,
+     STORAGE_IMAGE_CUBE_INT,
+     STORAGE_IMAGE_CUBE_UINT,
+
+     STORAGE_IMAGE_CUBE_ARRAY_FLOAT,
+     STORAGE_IMAGE_CUBE_ARRAY_INT,
+     STORAGE_IMAGE_CUBE_ARRAY_UINT,
+
+     STORAGE_IMAGE_3D_FLOAT,
+     STORAGE_IMAGE_3D_INT,
+     STORAGE_IMAGE_3D_UINT,
  };
 
 constexpr bool isDepthDescriptor(DescriptorType const type) noexcept {
@@ -336,6 +352,11 @@ constexpr bool isFloatDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_3D_FLOAT:
         case DescriptorType::SAMPLER_2D_MS_FLOAT:
         case DescriptorType::SAMPLER_2D_MS_ARRAY_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_3D_FLOAT:
             return true;
         default: ;
     }
@@ -351,6 +372,11 @@ constexpr bool isIntDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_3D_INT:
         case DescriptorType::SAMPLER_2D_MS_INT:
         case DescriptorType::SAMPLER_2D_MS_ARRAY_INT:
+        case DescriptorType::STORAGE_IMAGE_2D_INT:
+        case DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_INT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:
+        case DescriptorType::STORAGE_IMAGE_3D_INT:
             return true;
         default: ;
     }
@@ -366,6 +392,11 @@ constexpr bool isUnsignedIntDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_3D_UINT:
         case DescriptorType::SAMPLER_2D_MS_UINT:
         case DescriptorType::SAMPLER_2D_MS_ARRAY_UINT:
+        case DescriptorType::STORAGE_IMAGE_2D_UINT:
+        case DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_UINT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:
+        case DescriptorType::STORAGE_IMAGE_3D_UINT:
             return true;
         default: ;
     }
@@ -377,6 +408,9 @@ constexpr bool is3dTypeDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_3D_FLOAT:
         case DescriptorType::SAMPLER_3D_INT:
         case DescriptorType::SAMPLER_3D_UINT:
+        case DescriptorType::STORAGE_IMAGE_3D_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_3D_INT:
+        case DescriptorType::STORAGE_IMAGE_3D_UINT:
             return true;
         default: ;
     }
@@ -392,6 +426,9 @@ constexpr bool is2dTypeDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_2D_MS_FLOAT:
         case DescriptorType::SAMPLER_2D_MS_INT:
         case DescriptorType::SAMPLER_2D_MS_UINT:
+        case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_2D_INT:
+        case DescriptorType::STORAGE_IMAGE_2D_UINT:
             return true;
         default: ;
     }
@@ -407,6 +444,9 @@ constexpr bool is2dArrayTypeDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_2D_MS_ARRAY_FLOAT:
         case DescriptorType::SAMPLER_2D_MS_ARRAY_INT:
         case DescriptorType::SAMPLER_2D_MS_ARRAY_UINT:
+        case DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:
+        case DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:
             return true;
         default: ;
     }
@@ -419,6 +459,9 @@ constexpr bool isCubeTypeDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_CUBE_INT:
         case DescriptorType::SAMPLER_CUBE_UINT:
         case DescriptorType::SAMPLER_CUBE_DEPTH:
+        case DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_INT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_UINT:
             return true;
         default: ;
     }
@@ -431,6 +474,9 @@ constexpr bool isCubeArrayTypeDescriptor(DescriptorType const type) noexcept {
         case DescriptorType::SAMPLER_CUBE_ARRAY_INT:
         case DescriptorType::SAMPLER_CUBE_ARRAY_UINT:
         case DescriptorType::SAMPLER_CUBE_ARRAY_DEPTH:
+        case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:
+        case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:
             return true;
         default: ;
     }
@@ -483,6 +529,18 @@ constexpr std::string_view to_string(DescriptorType type) noexcept {
         DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_FLOAT)
         DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_INT)
         DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_UINT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_ARRAY_FLOAT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_ARRAY_INT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_2D_ARRAY_UINT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_CUBE_FLOAT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_CUBE_INT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_CUBE_UINT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_CUBE_ARRAY_FLOAT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_CUBE_ARRAY_INT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_CUBE_ARRAY_UINT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_3D_FLOAT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_3D_INT)
+        DESCRIPTOR_TYPE_CASE(STORAGE_IMAGE_3D_UINT)
         DESCRIPTOR_TYPE_CASE(UNIFORM_BUFFER)
         DESCRIPTOR_TYPE_CASE(SHADER_STORAGE_BUFFER)
         DESCRIPTOR_TYPE_CASE(INPUT_ATTACHMENT)
@@ -509,14 +567,16 @@ struct DescriptorSetLayoutDescriptor {
     static bool isSampler(DescriptorType type) noexcept {
         return int(type) <= int(DescriptorType::SAMPLER_EXTERNAL);
     }
+    static bool isStorageImage(DescriptorType type) noexcept {
+        return int(type) >= int(DescriptorType::STORAGE_IMAGE_2D_FLOAT) &&
+               int(type) <= int(DescriptorType::STORAGE_IMAGE_3D_UINT);
+    }
     static bool isBuffer(DescriptorType type) noexcept {
         return type == DescriptorType::UNIFORM_BUFFER ||
                type == DescriptorType::SHADER_STORAGE_BUFFER;
     }
     static bool isTexture(DescriptorType type) noexcept {
-        return isSampler(type) || type == DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
-                type == DescriptorType::STORAGE_IMAGE_2D_INT ||
-                type == DescriptorType::STORAGE_IMAGE_2D_UINT;
+        return isSampler(type) || isStorageImage(type);
     }
     DescriptorType type;
     ShaderStageFlags stageFlags;

@@ -28,6 +28,7 @@
 
 #include <utils/sstream.h>
 
+#include <algorithm>
 #include <cctype>
 #include <iomanip>
 
@@ -67,6 +68,15 @@ utils::io::sstream& CodeGenerator::generateCommonProlog(utils::io::sstream& out,
                     out << "#extension GL_OES_EGL_image_external_essl3 : require\n\n";
                 } else {
                     out << "#extension GL_OES_EGL_image_external : require\n\n";
+                }
+            }
+            if (stage == ShaderStage::COMPUTE) {
+                bool const hasCubeArrayImages = std::any_of(
+                        material.images.begin(), material.images.end(), [](auto const& image) {
+                            return isCubeArrayTypeDescriptor(image.descriptorType);
+                        });
+                if (hasCubeArrayImages) {
+                    out << "#extension GL_EXT_texture_cube_map_array : require\n\n";
                 }
             }
             if (v.hasStereo() && stage == ShaderStage::VERTEX) {
@@ -272,10 +282,28 @@ utils::io::sstream& CodeGenerator::generateCommonProlog(utils::io::sstream& out,
         }
         if (stage == ShaderStage::COMPUTE) {
             // Image uniforms have no implicit precision in GLSL ES. Compute materials can
-            // declare all three image types, so provide a default for each of them.
+            // declare any of the supported image types, so provide a default for each of them.
             out << "precision highp image2D;\n";
             out << "precision highp iimage2D;\n";
             out << "precision highp uimage2D;\n";
+            out << "precision highp image2DArray;\n";
+            out << "precision highp iimage2DArray;\n";
+            out << "precision highp uimage2DArray;\n";
+            out << "precision highp imageCube;\n";
+            out << "precision highp iimageCube;\n";
+            out << "precision highp uimageCube;\n";
+            out << "precision highp image3D;\n";
+            out << "precision highp iimage3D;\n";
+            out << "precision highp uimage3D;\n";
+            bool const hasCubeArrayImages = std::any_of(
+                    material.images.begin(), material.images.end(), [](auto const& image) {
+                        return isCubeArrayTypeDescriptor(image.descriptorType);
+                    });
+            if (hasCubeArrayImages) {
+                out << "precision highp imageCubeArray;\n";
+                out << "precision highp iimageCubeArray;\n";
+                out << "precision highp uimageCubeArray;\n";
+            }
         }
     }
 
@@ -612,10 +640,23 @@ utils::io::sstream& CodeGenerator::generateImages(utils::io::sstream& out,
         DescriptorSetBindingPoints const set, MaterialInfo::ImageContainer const& images) const {
     for (auto const& image : images) {
         char const* type = "image2D";
-        if (image.descriptorType == backend::DescriptorType::STORAGE_IMAGE_2D_INT) {
-            type = "iimage2D";
-        } else if (image.descriptorType == backend::DescriptorType::STORAGE_IMAGE_2D_UINT) {
-            type = "uimage2D";
+        switch (image.descriptorType) {
+            case backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT:         type = "image2D"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_2D_INT:           type = "iimage2D"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_2D_UINT:          type = "uimage2D"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:   type = "image2DArray"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:     type = "iimage2DArray"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:    type = "uimage2DArray"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:       type = "imageCube"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_CUBE_INT:         type = "iimageCube"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_CUBE_UINT:        type = "uimageCube"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT: type = "imageCubeArray"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:   type = "iimageCubeArray"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:  type = "uimageCubeArray"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_3D_FLOAT:         type = "image3D"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_3D_INT:           type = "iimage3D"; break;
+            case backend::DescriptorType::STORAGE_IMAGE_3D_UINT:          type = "uimage3D"; break;
+            default: assert_invariant(false); break;
         }
 
         out << "\nlayout(";

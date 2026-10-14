@@ -315,9 +315,21 @@ template<typename WebGPUPrintable>
      case DescriptorType::UNIFORM_BUFFER:            return "UNIFORM_BUFFER";
      case DescriptorType::SHADER_STORAGE_BUFFER:     return "SHADER_STORAGE_BUFFER";
      case DescriptorType::INPUT_ATTACHMENT:          return "INPUT_ATTACHMENT";
-     case DescriptorType::STORAGE_IMAGE_2D_FLOAT:    return "STORAGE_IMAGE_2D_FLOAT";
-     case DescriptorType::STORAGE_IMAGE_2D_INT:      return "STORAGE_IMAGE_2D_INT";
-     case DescriptorType::STORAGE_IMAGE_2D_UINT:     return "STORAGE_IMAGE_2D_UINT";
+     case DescriptorType::STORAGE_IMAGE_2D_FLOAT:         return "STORAGE_IMAGE_2D_FLOAT";
+     case DescriptorType::STORAGE_IMAGE_2D_INT:           return "STORAGE_IMAGE_2D_INT";
+     case DescriptorType::STORAGE_IMAGE_2D_UINT:          return "STORAGE_IMAGE_2D_UINT";
+     case DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:   return "STORAGE_IMAGE_2D_ARRAY_FLOAT";
+     case DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:     return "STORAGE_IMAGE_2D_ARRAY_INT";
+     case DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:    return "STORAGE_IMAGE_2D_ARRAY_UINT";
+     case DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:       return "STORAGE_IMAGE_CUBE_FLOAT";
+     case DescriptorType::STORAGE_IMAGE_CUBE_INT:         return "STORAGE_IMAGE_CUBE_INT";
+     case DescriptorType::STORAGE_IMAGE_CUBE_UINT:        return "STORAGE_IMAGE_CUBE_UINT";
+     case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT: return "STORAGE_IMAGE_CUBE_ARRAY_FLOAT";
+     case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:   return "STORAGE_IMAGE_CUBE_ARRAY_INT";
+     case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:  return "STORAGE_IMAGE_CUBE_ARRAY_UINT";
+     case DescriptorType::STORAGE_IMAGE_3D_FLOAT:         return "STORAGE_IMAGE_3D_FLOAT";
+     case DescriptorType::STORAGE_IMAGE_3D_INT:           return "STORAGE_IMAGE_3D_INT";
+     case DescriptorType::STORAGE_IMAGE_3D_UINT:          return "STORAGE_IMAGE_3D_UINT";
     }
 }
 

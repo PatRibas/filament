@@ -361,9 +361,12 @@ MaterialBuilder& MaterialBuilder::buffer(BufferInterfaceBlock bib) {
     return *this;
 }
 
-MaterialBuilder& MaterialBuilder::image(const char* name, const char* format, uint8_t qualifiers) {
+MaterialBuilder& MaterialBuilder::image(const char* name, const char* format, uint8_t qualifiers,
+        SamplerType type) {
+    FILAMENT_CHECK_PRECONDITION(type != SamplerType::SAMPLER_EXTERNAL)
+            << "External textures cannot be used as storage images.";
     FILAMENT_CHECK_POSTCONDITION(mImages.size() < MAX_IMAGES_COUNT) << "Too many storage images";
-    mImages.push_back({ CString(name), CString(format), qualifiers });
+    mImages.push_back({ CString(name), CString(format), qualifiers, type });
     return *this;
 }
 
@@ -708,11 +711,39 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
 
     for (auto const& image : mImages) {
         std::string_view const format{ image.format.data(), image.format.size() };
-        DescriptorType const descriptorType = format.ends_with("ui")
-                ? DescriptorType::STORAGE_IMAGE_2D_UINT
-                : (format.ends_with("i")
-                        ? DescriptorType::STORAGE_IMAGE_2D_INT
-                        : DescriptorType::STORAGE_IMAGE_2D_FLOAT);
+        bool const isUint = format.ends_with("ui");
+        bool const isInt = !isUint && format.ends_with("i");
+        DescriptorType descriptorType = DescriptorType::STORAGE_IMAGE_2D_FLOAT;
+        switch (image.type) {
+            case SamplerType::SAMPLER_2D:
+                descriptorType = isUint ? DescriptorType::STORAGE_IMAGE_2D_UINT
+                        : (isInt ? DescriptorType::STORAGE_IMAGE_2D_INT
+                                 : DescriptorType::STORAGE_IMAGE_2D_FLOAT);
+                break;
+            case SamplerType::SAMPLER_2D_ARRAY:
+                descriptorType = isUint ? DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT
+                        : (isInt ? DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT
+                                 : DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT);
+                break;
+            case SamplerType::SAMPLER_CUBEMAP:
+                descriptorType = isUint ? DescriptorType::STORAGE_IMAGE_CUBE_UINT
+                        : (isInt ? DescriptorType::STORAGE_IMAGE_CUBE_INT
+                                 : DescriptorType::STORAGE_IMAGE_CUBE_FLOAT);
+                break;
+            case SamplerType::SAMPLER_CUBEMAP_ARRAY:
+                descriptorType = isUint ? DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT
+                        : (isInt ? DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT
+                                 : DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT);
+                break;
+            case SamplerType::SAMPLER_3D:
+                descriptorType = isUint ? DescriptorType::STORAGE_IMAGE_3D_UINT
+                        : (isInt ? DescriptorType::STORAGE_IMAGE_3D_INT
+                                 : DescriptorType::STORAGE_IMAGE_3D_FLOAT);
+                break;
+            case SamplerType::SAMPLER_EXTERNAL:
+                assert_invariant(false);
+                break;
+        }
         info.images.emplace_back(MaterialInfo::Image{
                 .name = image.name,
                 .format = image.format,

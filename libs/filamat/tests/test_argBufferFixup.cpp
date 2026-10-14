@@ -163,6 +163,11 @@ TEST(ArgBufferFixup, StorageImages) {
                     .image(0, "imageFloat", DescriptorType::STORAGE_IMAGE_2D_FLOAT)
                     .image(1, "imageInt", DescriptorType::STORAGE_IMAGE_2D_INT)
                     .image(2, "imageUint", DescriptorType::STORAGE_IMAGE_2D_UINT)
+                    .image(3, "image2dArray", DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT)
+                    .image(4, "imageCube", DescriptorType::STORAGE_IMAGE_CUBE_INT)
+                    .image(5, "imageCubeArray", DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT)
+                    .image(6, "image3d", DescriptorType::STORAGE_IMAGE_3D_FLOAT,
+                            MetalArgumentBuffer::Access::READ_WRITE)
                     .build();
 
     const std::string expected =
@@ -170,6 +175,10 @@ TEST(ArgBufferFixup, StorageImages) {
             "texture2d<float, access::write> imageFloat [[id(0)]];\n"
             "texture2d<int, access::write> imageInt [[id(1)]];\n"
             "texture2d<uint, access::write> imageUint [[id(2)]];\n"
+            "texture2d_array<float, access::write> image2dArray [[id(3)]];\n"
+            "texturecube<int, access::write> imageCube [[id(4)]];\n"
+            "texturecube_array<uint, access::write> imageCubeArray [[id(5)]];\n"
+            "texture3d<float, access::read_write> image3d [[id(6)]];\n"
             "}";
 
     EXPECT_EQ(argBuffer->getMsl(), expected);

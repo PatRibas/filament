@@ -1600,11 +1600,33 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                 break;
             case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
             case DescriptorType::STORAGE_IMAGE_2D_INT:
-            case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+            case DescriptorType::STORAGE_IMAGE_2D_UINT:
+            case DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:
+            case DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_INT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_UINT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:
+            case DescriptorType::STORAGE_IMAGE_3D_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_3D_INT:
+            case DescriptorType::STORAGE_IMAGE_3D_UINT: {
                 MTLArgumentDescriptor* textureArgument = [MTLArgumentDescriptor argumentDescriptor];
                 textureArgument.index = binding.binding * 2;
                 textureArgument.dataType = MTLDataTypeTexture;
-                textureArgument.textureType = MTLTextureType2D;
+                if (is2dTypeDescriptor(binding.type)) {
+                    textureArgument.textureType = MTLTextureType2D;
+                } else if (is2dArrayTypeDescriptor(binding.type)) {
+                    textureArgument.textureType = MTLTextureType2DArray;
+                } else if (isCubeTypeDescriptor(binding.type)) {
+                    textureArgument.textureType = MTLTextureTypeCube;
+                } else if (isCubeArrayTypeDescriptor(binding.type)) {
+                    textureArgument.textureType = MTLTextureTypeCubeArray;
+                } else if (is3dTypeDescriptor(binding.type)) {
+                    textureArgument.textureType = MTLTextureType3D;
+                }
                 textureArgument.access = MTLArgumentAccessWriteOnly;
                 [arguments addObject:textureArgument];
                 break;
@@ -1779,7 +1801,19 @@ id<MTLBuffer> MetalDescriptorSet::finalizeAndGetBuffer(MetalDriver* driver, Shad
                 break;
             case DescriptorType::STORAGE_IMAGE_2D_FLOAT:
             case DescriptorType::STORAGE_IMAGE_2D_INT:
-            case DescriptorType::STORAGE_IMAGE_2D_UINT: {
+            case DescriptorType::STORAGE_IMAGE_2D_UINT:
+            case DescriptorType::STORAGE_IMAGE_2D_ARRAY_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_2D_ARRAY_INT:
+            case DescriptorType::STORAGE_IMAGE_2D_ARRAY_UINT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_INT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_UINT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_INT:
+            case DescriptorType::STORAGE_IMAGE_CUBE_ARRAY_UINT:
+            case DescriptorType::STORAGE_IMAGE_3D_FLOAT:
+            case DescriptorType::STORAGE_IMAGE_3D_INT:
+            case DescriptorType::STORAGE_IMAGE_3D_UINT: {
                 auto found = textures.find(binding.binding);
                 if (found == textures.end()) {
                     [encoder setTexture:getOrCreateEmptyTexture(driver->mContext)

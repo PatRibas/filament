@@ -63,9 +63,7 @@ MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::buffer(
 MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::image(
         size_t index, const std::string& name,
         filament::backend::DescriptorType type, Access access) noexcept {
-    assert_invariant(type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
-                     type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_INT ||
-                     type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_UINT);
+    assert_invariant(filament::backend::DescriptorSetLayoutDescriptor::isStorageImage(type));
     mArguments.emplace_back(ImageArgument { name, index, type, access });
     return *this;
 }
@@ -149,20 +147,27 @@ std::ostream& MetalArgumentBuffer::Builder::BufferArgument::write(std::ostream& 
 }
 
 std::ostream& MetalArgumentBuffer::Builder::ImageArgument::write(std::ostream& os) const {
-    os << "texture2d<";
-    switch (type) {
-        case filament::backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT:
-            os << "float";
-            break;
-        case filament::backend::DescriptorType::STORAGE_IMAGE_2D_INT:
-            os << "int";
-            break;
-        case filament::backend::DescriptorType::STORAGE_IMAGE_2D_UINT:
-            os << "uint";
-            break;
-        default:
-            assert_invariant(false);
-            break;
+    if (filament::backend::is2dTypeDescriptor(type)) {
+        os << "texture2d<";
+    } else if (filament::backend::is2dArrayTypeDescriptor(type)) {
+        os << "texture2d_array<";
+    } else if (filament::backend::isCubeTypeDescriptor(type)) {
+        os << "texturecube<";
+    } else if (filament::backend::isCubeArrayTypeDescriptor(type)) {
+        os << "texturecube_array<";
+    } else if (filament::backend::is3dTypeDescriptor(type)) {
+        os << "texture3d<";
+    } else {
+        assert_invariant(false);
+    }
+    if (filament::backend::isFloatDescriptor(type)) {
+        os << "float";
+    } else if (filament::backend::isIntDescriptor(type)) {
+        os << "int";
+    } else if (filament::backend::isUnsignedIntDescriptor(type)) {
+        os << "uint";
+    } else {
+        assert_invariant(false);
     }
     switch (access) {
         case Access::SAMPLE:

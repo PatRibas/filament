@@ -12,6 +12,7 @@ material {
     images : [
         {
             name : outputTexture,
+            type: image2D,
             format : rgba8,
             qualifiers : [writeonly]
         }

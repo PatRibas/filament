@@ -343,8 +343,9 @@ public:
 
     MaterialBuilder& buffer(filament::BufferInterfaceBlock bib);
 
-    //! Add a 2D storage image parameter to this compute material.
-    MaterialBuilder& image(const char* name, const char* format, uint8_t qualifiers = 0);
+    //! Add a storage image parameter to this compute material.
+    MaterialBuilder& image(const char* name, const char* format, uint8_t qualifiers = 0,
+            SamplerType type = SamplerType::SAMPLER_2D);
 
     //! Custom variables (all float4).
     MaterialBuilder& variable(Variable v, const char* name) noexcept;
@@ -827,6 +828,7 @@ public:
         utils::CString name;
         utils::CString format;
         uint8_t qualifiers = 0;
+        SamplerType type = SamplerType::SAMPLER_2D;
     };
     using ImageList = std::vector<Image>;
     using ConstantList = std::vector<Constant>;

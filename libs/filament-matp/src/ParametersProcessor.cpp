@@ -618,9 +618,36 @@ static Status processImage(MaterialBuilder& builder, const JsonishObject& jsonOb
         }
     }
 
+    MaterialBuilder::SamplerType imageType = MaterialBuilder::SamplerType::SAMPLER_2D;
+    if (const JsonishValue* typeValue = jsonObject.getValue("type")) {
+        if (typeValue->getType() != JsonishValue::STRING) {
+            return Status::invalidArgument("images: type value must be a STRING.");
+        }
+        using namespace std::literals;
+        auto const typeString = typeValue->toJsonString()->getString();
+        if (typeString == "image2d"sv || typeString == "image2D"sv ||
+                typeString == "sampler2d"sv) {
+            imageType = MaterialBuilder::SamplerType::SAMPLER_2D;
+        } else if (typeString == "image2dArray"sv || typeString == "image2DArray"sv ||
+                typeString == "sampler2dArray"sv) {
+            imageType = MaterialBuilder::SamplerType::SAMPLER_2D_ARRAY;
+        } else if (typeString == "imageCubemap"sv || typeString == "imageCube"sv ||
+                typeString == "samplerCubemap"sv) {
+            imageType = MaterialBuilder::SamplerType::SAMPLER_CUBEMAP;
+        } else if (typeString == "imageCubemapArray"sv || typeString == "imageCubeArray"sv ||
+                typeString == "samplerCubemapArray"sv) {
+            imageType = MaterialBuilder::SamplerType::SAMPLER_CUBEMAP_ARRAY;
+        } else if (typeString == "image3d"sv || typeString == "image3D"sv ||
+                typeString == "sampler3d"sv) {
+            imageType = MaterialBuilder::SamplerType::SAMPLER_3D;
+        } else {
+            return Status::invalidArgument("images: invalid type value.");
+        }
+    }
+
     auto const name = nameValue->toJsonString()->getString();
     auto const format = formatValue->toJsonString()->getString();
-    builder.image(name.data(), format.data(), qualifiers);
+    builder.image(name.data(), format.data(), qualifiers, imageType);
     return Status::ok();
 }
 
