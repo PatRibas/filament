@@ -17,6 +17,7 @@
 #include "common/CallbackUtils.h"
 #include "common/JniUtils.h"
 
+#include <filament/BufferObject.h>
 #include <filament/Camera.h>
 #include <filament/ColorGrading.h>
 #include <filament/Engine.h>
@@ -239,6 +240,16 @@ Java_com_google_android_filament_Engine_nDestroyVertexBuffer(JNIEnv *env, jclass
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_google_android_filament_Engine_nDestroyBufferObject(JNIEnv *env, jclass,
+        jlong nativeEngine, jlong nativeBufferObject) {
+    Engine* engine = (Engine*) nativeEngine;
+    BufferObject* bufferObject = (BufferObject*) nativeBufferObject;
+    return wrapJni<jboolean>(env, [=]() {
+        return engine->destroy(bufferObject);
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_google_android_filament_Engine_nDestroySkinningBuffer(JNIEnv *env, jclass,
         jlong nativeEngine, jlong nativeSkinningBuffer) {
     Engine* engine = (Engine*) nativeEngine;
@@ -386,6 +397,13 @@ Java_com_google_android_filament_Engine_nIsValidVertexBuffer(JNIEnv*, jclass,
         jlong nativeEngine, jlong nativeVertexBuffer) {
     Engine* engine = (Engine *)nativeEngine;
     return (jboolean)engine->isValid((VertexBuffer*)nativeVertexBuffer);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_google_android_filament_Engine_nIsValidBufferObject(JNIEnv*, jclass,
+        jlong nativeEngine, jlong nativeBufferObject) {
+    Engine* engine = (Engine *)nativeEngine;
+    return (jboolean)engine->isValid((BufferObject*)nativeBufferObject);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

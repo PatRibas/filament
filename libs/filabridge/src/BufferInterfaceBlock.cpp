@@ -115,7 +115,8 @@ BufferInterfaceBlock::BufferInterfaceBlock(Builder const& builder) noexcept
     : mName(builder.mName),
       mFieldInfoList(builder.mEntries.size()),
       mAlignment(builder.mAlignment),
-      mTarget(builder.mTarget)
+      mTarget(builder.mTarget),
+      mQualifiers(builder.mQualifiers)
 {
     auto& infoMap = mInfoMap;
     infoMap.reserve(builder.mEntries.size());

@@ -5,10 +5,12 @@ material {
     parameters : [
         {
             type : float,
+            precision : high,
             name : deltaTime
         },
         {
             type : uint,
+            precision : high,
             name : count
         }
     ],
@@ -17,21 +19,21 @@ material {
             name : Positions,
             qualifiers : [],
             fields : [
-                { name : data, type : float4[] }
+                { name : data, type : float4[], precision : high }
             ]
         },
         {
             name : Velocities,
             qualifiers : [],
             fields : [
-                { name : data, type : float4[] }
+                { name : data, type : float4[], precision : high }
             ]
         },
         {
             name : Colors,
             qualifiers : [],
             fields : [
-                { name : data, type : float4[] }
+                { name : data, type : float4[], precision : high }
             ]
         }
     ]

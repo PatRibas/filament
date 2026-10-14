@@ -5,6 +5,7 @@ material {
     parameters : [
         {
             type : float,
+            precision : high,
             name : time
         }
     ],

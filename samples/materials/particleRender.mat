@@ -12,14 +12,14 @@ material {
             name : Positions,
             qualifiers : [ readonly ],
             fields : [
-                { name : data, type : float4[] }
+                { name : data, type : float4[], precision : high }
             ]
         },
         {
             name : Colors,
             qualifiers : [ readonly ],
             fields : [
-                { name : data, type : float4[] }
+                { name : data, type : float4[], precision : high }
             ]
         }
     ]

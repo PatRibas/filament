@@ -347,6 +347,11 @@ public class MaterialInstance {
     }
 
     /** Sets a shader storage buffer parameter on a compute material. */
+    public void setParameter(@NonNull String name, @NonNull BufferObject buffer) {
+        setParameter(name, buffer, 0, buffer.getByteCount());
+    }
+
+    /** Sets a shader storage buffer parameter on a compute material. */
     public void setParameter(@NonNull String name, @NonNull BufferObject buffer,
             @IntRange(from = 0) int offset, @IntRange(from = 0) int size) {
         nSetParameterStorageBuffer(getNativeObject(), name, buffer.getNativeObject(), offset, size);

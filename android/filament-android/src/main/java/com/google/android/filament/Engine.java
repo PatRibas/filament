@@ -994,6 +994,15 @@ public class Engine {
      * @param object Object to check for validity
      * @return returns true if the specified object is valid.
      */
+    public boolean isValidBufferObject(@NonNull BufferObject object) {
+        return nIsValidBufferObject(getNativeObject(), object.getNativeObject());
+    }
+
+    /**
+     * Returns whether the object is valid.
+     * @param object Object to check for validity
+     * @return returns true if the specified object is valid.
+     */
     public boolean isValidSkinningBuffer(@NonNull SkinningBuffer object) {
         return nIsValidSkinningBuffer(getNativeObject(), object.getNativeObject());
     }
@@ -1249,6 +1258,15 @@ public class Engine {
     public void destroyVertexBuffer(@NonNull VertexBuffer vertexBuffer) {
         assertDestroy(nDestroyVertexBuffer(getNativeObject(), vertexBuffer.getNativeObject()));
         vertexBuffer.clearNativeObject();
+    }
+
+    /**
+     * Destroys a {@link BufferObject} and frees all its associated resources.
+     * @param bufferObject the {@link BufferObject} to destroy
+     */
+    public void destroyBufferObject(@NonNull BufferObject bufferObject) {
+        assertDestroy(nDestroyBufferObject(getNativeObject(), bufferObject.getNativeObject()));
+        bufferObject.clearNativeObject();
     }
 
     /**
@@ -1572,6 +1590,7 @@ public class Engine {
     private static native boolean nDestroyStream(long nativeEngine, long nativeStream);
     private static native boolean nDestroyIndexBuffer(long nativeEngine, long nativeIndexBuffer);
     private static native boolean nDestroyVertexBuffer(long nativeEngine, long nativeVertexBuffer);
+    private static native boolean nDestroyBufferObject(long nativeEngine, long nativeBufferObject);
     private static native boolean nDestroySkinningBuffer(long nativeEngine, long nativeSkinningBuffer);
     private static native boolean nDestroyMorphTargetBuffer(long nativeEngine, long nativeMorphTargetBuffer);
     private static native boolean nDestroyIndirectLight(long nativeEngine, long nativeIndirectLight);
@@ -1591,6 +1610,7 @@ public class Engine {
     private static native boolean nIsValidStream(long nativeEngine, long nativeStream);
     private static native boolean nIsValidIndexBuffer(long nativeEngine, long nativeIndexBuffer);
     private static native boolean nIsValidVertexBuffer(long nativeEngine, long nativeVertexBuffer);
+    private static native boolean nIsValidBufferObject(long nativeEngine, long nativeBufferObject);
     private static native boolean nIsValidSkinningBuffer(long nativeEngine, long nativeSkinningBuffer);
     private static native boolean nIsValidMorphTargetBuffer(long nativeEngine, long nativeMorphTargetBuffer);
     private static native boolean nIsValidIndirectLight(long nativeEngine, long nativeIndirectLight);

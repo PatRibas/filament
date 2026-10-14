@@ -750,17 +750,6 @@ io::sstream& CodeGenerator::generateBufferInterfaceBlock(io::sstream& out, Shade
 
     out << ") ";
 
-    switch (uib.getTarget()) {
-        case BufferInterfaceBlock::Target::UNIFORM:
-            out << "uniform ";
-            break;
-        case BufferInterfaceBlock::Target::SSBO:
-            out << "buffer ";
-            break;
-    }
-
-    out << blockName << " ";
-
     if (uib.getTarget() == BufferInterfaceBlock::Target::SSBO) {
         uint8_t qualifiers = uib.getQualifier();
         while (qualifiers) {
@@ -776,7 +765,16 @@ io::sstream& CodeGenerator::generateBufferInterfaceBlock(io::sstream& out, Shade
         }
     }
 
-    out << "{\n";
+    switch (uib.getTarget()) {
+        case BufferInterfaceBlock::Target::UNIFORM:
+            out << "uniform ";
+            break;
+        case BufferInterfaceBlock::Target::SSBO:
+            out << "buffer ";
+            break;
+    }
+
+    out << blockName << " {\n";
 
     generateInterfaceFields(out, infos, getDefaultPrecision(stage));
 

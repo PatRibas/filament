@@ -517,8 +517,10 @@ std::string ShaderGenerator::createSurfaceVertexProgram(ShaderModel const shader
             +PerMaterialBindingPoints::MATERIAL_PARAMS,
             material.uib);
 
-    cg.generateBuffers(vs, DescriptorSetBindingPoints::PER_MATERIAL, material.buffers,
-            ShaderStage::VERTEX);
+    if (!mIsMaterialVertexShaderEmpty) {
+        cg.generateBuffers(vs, DescriptorSetBindingPoints::PER_MATERIAL, material.buffers,
+                ShaderStage::VERTEX);
+    }
 
     CodeGenerator::generateSeparator(vs);
 
