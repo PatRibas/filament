@@ -624,8 +624,22 @@ utils::io::sstream& CodeGenerator::generateImages(utils::io::sstream& out,
         } else {
             out << "set = " << +set << ", binding = " << +image.binding << ", ";
         }
-        out << image.format.c_str() << ") uniform writeonly " << type << " "
-            << image.name.c_str() << ";\n";
+        out << image.format.c_str() << ") uniform ";
+
+        uint8_t qualifiers = image.qualifiers;
+        while (qualifiers) {
+            uint8_t const mask = 1u << utils::ctz(unsigned(qualifiers));
+            switch (BufferInterfaceBlock::Qualifier(qualifiers & mask)) {
+                case BufferInterfaceBlock::Qualifier::COHERENT:  out << "coherent "; break;
+                case BufferInterfaceBlock::Qualifier::WRITEONLY: out << "writeonly "; break;
+                case BufferInterfaceBlock::Qualifier::READONLY:  out << "readonly "; break;
+                case BufferInterfaceBlock::Qualifier::VOLATILE:  out << "volatile "; break;
+                case BufferInterfaceBlock::Qualifier::RESTRICT:  out << "restrict "; break;
+            }
+            qualifiers &= ~mask;
+        }
+
+        out << type << " " << image.name.c_str() << ";\n";
     }
     return out;
 }

@@ -83,6 +83,7 @@ struct UTILS_PUBLIC MaterialInfo {
         utils::CString format;
         filament::backend::DescriptorType descriptorType;
         filament::backend::descriptor_binding_t binding;
+        uint8_t qualifiers = 0;
     };
 
     using BufferContainer = utils::FixedCapacityVector<Buffer>;

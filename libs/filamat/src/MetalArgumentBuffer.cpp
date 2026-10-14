@@ -62,11 +62,11 @@ MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::buffer(
 
 MetalArgumentBuffer::Builder& MetalArgumentBuffer::Builder::image(
         size_t index, const std::string& name,
-        filament::backend::DescriptorType type) noexcept {
+        filament::backend::DescriptorType type, Access access) noexcept {
     assert_invariant(type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_FLOAT ||
                      type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_INT ||
                      type == filament::backend::DescriptorType::STORAGE_IMAGE_2D_UINT);
-    mArguments.emplace_back(ImageArgument { name, index, type });
+    mArguments.emplace_back(ImageArgument { name, index, type, access });
     return *this;
 }
 
@@ -164,7 +164,21 @@ std::ostream& MetalArgumentBuffer::Builder::ImageArgument::write(std::ostream& o
             assert_invariant(false);
             break;
     }
-    os << ", access::write> " << name << " [[id(" << index << ")]];" << std::endl;
+    switch (access) {
+        case Access::SAMPLE:
+            os << "> ";
+            break;
+        case Access::READ:
+            os << ", access::read> ";
+            break;
+        case Access::WRITE:
+            os << ", access::write> ";
+            break;
+        case Access::READ_WRITE:
+            os << ", access::read_write> ";
+            break;
+    }
+    os << name << " [[id(" << index << ")]];" << std::endl;
     return os;
 }
 

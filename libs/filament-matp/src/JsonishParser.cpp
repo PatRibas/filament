@@ -215,8 +215,10 @@ JsonishObject* JsonishParser::parseMembers() noexcept {
 
         object->addPair(pair);
 
-        // Is there a comma and more pairs?
-        if (!consumeLexeme(COMMA)) {
+        // Allow pairs to be separated by either commas or whitespace.
+        consumeLexeme(COMMA);
+        const JsonLexeme* nextLexeme = peekNextLexemeType();
+        if (!nextLexeme || nextLexeme->getType() == BLOCK_END) {
             break;
         }
     }
@@ -229,14 +231,21 @@ JsonishArray* JsonishParser::parseElements() noexcept {
     while (true) {
         JsonishValue* value = parseValue();
         if (!value) {
+            // Accept a comma after the last element
+            const JsonLexeme* lexeme = peekNextLexemeType();
+            if (lexeme && lexeme->getType() == ARRAY_END) {
+                break;
+            }
             setInvalidArgumentError("unable to read value");
             delete array;
             return nullptr;
         }
         array->addValue(value);
 
-        // Is there a comma and more pairs?
-        if (!consumeLexeme(COMMA)) {
+        // Allow elements to be separated by either commas or whitespace.
+        consumeLexeme(COMMA);
+        const JsonLexeme* nextLexeme = peekNextLexemeType();
+        if (!nextLexeme || nextLexeme->getType() == ARRAY_END) {
             break;
         }
     }

@@ -361,9 +361,9 @@ MaterialBuilder& MaterialBuilder::buffer(BufferInterfaceBlock bib) {
     return *this;
 }
 
-MaterialBuilder& MaterialBuilder::image(const char* name, const char* format) {
+MaterialBuilder& MaterialBuilder::image(const char* name, const char* format, uint8_t qualifiers) {
     FILAMENT_CHECK_POSTCONDITION(mImages.size() < MAX_IMAGES_COUNT) << "Too many storage images";
-    mImages.push_back({ CString(name), CString(format) });
+    mImages.push_back({ CString(name), CString(format), qualifiers });
     return *this;
 }
 
@@ -718,6 +718,7 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
                 .format = image.format,
                 .descriptorType = descriptorType,
                 .binding = descriptor_binding_t(binding++),
+                .qualifiers = image.qualifiers,
         });
     }
 

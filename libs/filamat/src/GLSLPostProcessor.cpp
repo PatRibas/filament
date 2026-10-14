@@ -551,6 +551,7 @@ void GLSLPostProcessor::spirvToMsl(const SpirvBlob* spirv, std::string* outMsl,
                 case DescriptorType::STORAGE_IMAGE_2D_INT:
                 case DescriptorType::STORAGE_IMAGE_2D_UINT: {
                     std::string imageName = name.c_str();
+                    auto access = MetalArgumentBuffer::Access::WRITE;
                     for (const auto& res : resources.storage_images) {
                         if (mslCompiler.get_decoration(res.id, spv::DecorationDescriptorSet) ==
                                         setIndex &&
@@ -560,10 +561,18 @@ void GLSLPostProcessor::spirvToMsl(const SpirvBlob* spirv, std::string* outMsl,
                             if (!varName.empty()) {
                                 imageName = varName;
                             }
+                            if (mslCompiler.has_decoration(res.id, spv::DecorationNonWritable)) {
+                                access = MetalArgumentBuffer::Access::SAMPLE;
+                            } else if (mslCompiler.has_decoration(
+                                               res.id, spv::DecorationNonReadable)) {
+                                access = MetalArgumentBuffer::Access::WRITE;
+                            } else {
+                                access = MetalArgumentBuffer::Access::READ_WRITE;
+                            }
                             break;
                         }
                     }
-                    argBufferBuilder.image(info.binding * 2 + 0, imageName, info.type);
+                    argBufferBuilder.image(info.binding * 2 + 0, imageName, info.type, access);
                     break;
                 }
             }

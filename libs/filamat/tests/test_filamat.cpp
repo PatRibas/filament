@@ -1218,7 +1218,8 @@ TEST_F(MaterialCompiler, ComputeMaterialMetal) {
     builder.targetApi(MaterialBuilderBase::TargetApi::METAL);
     builder.groupSize({ 8, 8, 1 });
     builder.parameter("dt", UniformType::FLOAT);
-    builder.image("outputImage", "rgba8");
+    builder.image("outputImage", "rgba8",
+            uint8_t(filament::BufferInterfaceBlock::Qualifier::WRITEONLY));
     builder.buffer(filament::BufferInterfaceBlock::Builder()
             .name("Data")
             .target(filament::BufferInterfaceBlock::Target::SSBO)
@@ -1279,7 +1280,8 @@ TEST_F(MaterialCompiler, ComputeMaterialOpenGL) {
     builder.targetApi(MaterialBuilderBase::TargetApi::OPENGL);
     builder.groupSize({ 8, 8, 1 });
     builder.parameter("dt", UniformType::FLOAT);
-    builder.image("outputImage", "rgba8");
+    builder.image("outputImage", "rgba8",
+            uint8_t(filament::BufferInterfaceBlock::Qualifier::WRITEONLY));
     builder.buffer(filament::BufferInterfaceBlock::Builder()
             .name("Data")
             .target(filament::BufferInterfaceBlock::Target::SSBO)
@@ -1320,6 +1322,185 @@ TEST_F(MaterialCompiler, SurfaceMaterialWithSsboOpenGL) {
             .build());
     builder.materialVertex(vertexCode.c_str());
     builder.material(fragmentCode.c_str());
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, ComputeMaterialImageQualifierDefault) {
+    const std::string computeCode(R"(
+        void compute() {
+            ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+            vec4 v = imageLoad(img, coord);
+            imageStore(img, coord, v + vec4(1.0));
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageDefault");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 8, 8, 1 });
+    builder.image("img", "r32f");
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("r32f) uniform image2D img;"), std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, ComputeMaterialImageQualifierCoherent) {
+    using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+    const std::string computeCode(R"(
+        void compute() {
+            ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+            vec4 v = imageLoad(img, coord);
+            imageStore(img, coord, v + vec4(1.0));
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageCoherent");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 8, 8, 1 });
+    builder.image("img", "r32f", uint8_t(Qualifier::COHERENT));
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("r32f) uniform coherent image2D img;"), std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, ComputeMaterialImageQualifierWriteonly) {
+    using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+    const std::string computeCode(R"(
+        void compute() {
+            ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+            imageStore(img, coord, vec4(1.0));
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageWriteonly");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 8, 8, 1 });
+    builder.image("img", "rgba8", uint8_t(Qualifier::WRITEONLY));
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("rgba8) uniform writeonly image2D img;"), std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, ComputeMaterialImageQualifierReadonly) {
+    using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+    const std::string computeCode(R"(
+        void compute() {
+            ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+            vec4 v = imageLoad(inImg, coord);
+            imageStore(outImg, coord, v);
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageReadonly");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 8, 8, 1 });
+    builder.image("inImg", "rgba8", uint8_t(Qualifier::READONLY));
+    builder.image("outImg", "rgba8", uint8_t(Qualifier::WRITEONLY));
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("rgba8) uniform readonly image2D inImg;"), std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, ComputeMaterialImageQualifierVolatile) {
+    using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+    const std::string computeCode(R"(
+        void compute() {
+            ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+            vec4 v = imageLoad(img, coord);
+            imageStore(img, coord, v + vec4(1.0));
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageVolatile");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 8, 8, 1 });
+    builder.image("img", "r32f", uint8_t(Qualifier::VOLATILE));
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("r32f) uniform volatile image2D img;"), std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
+TEST_F(MaterialCompiler, ComputeMaterialImageQualifierRestrict) {
+    using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+    const std::string computeCode(R"(
+        void compute() {
+            ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+            vec4 v = imageLoad(img, coord);
+            imageStore(img, coord, v + vec4(1.0));
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeImageRestrict");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 8, 8, 1 });
+    builder.image("img", "r32f", uint8_t(Qualifier::RESTRICT));
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glsl = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glsl.find("r32f) uniform restrict image2D img;"), std::string::npos);
 
     const Package result = builder.build(*jobSystem);
     EXPECT_TRUE(result.isValid());

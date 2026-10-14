@@ -590,9 +590,37 @@ static Status processImage(MaterialBuilder& builder, const JsonishObject& jsonOb
         return Status::invalidArgument("images name and format values must be STRINGs.");
     }
 
+    uint8_t qualifiers = 0;
+    if (const JsonishValue* qualifiersValue = jsonObject.getValue("qualifiers")) {
+        if (qualifiersValue->getType() != JsonishValue::ARRAY) {
+            return Status::invalidArgument("images: qualifiers value must be an ARRAY.");
+        }
+        for (auto const* value : qualifiersValue->toJsonArray()->getElements()) {
+            if (value->getType() != JsonishValue::Type::STRING) {
+                return Status::invalidArgument("images: qualifiers must be an array of STRINGs.");
+            }
+            using namespace std::literals;
+            using Qualifier = filament::BufferInterfaceBlock::Qualifier;
+            auto const qualifierString = value->toJsonString()->getString();
+            if (qualifierString == "coherent"sv) {
+                qualifiers |= uint8_t(Qualifier::COHERENT);
+            } else if (qualifierString == "writeonly"sv) {
+                qualifiers |= uint8_t(Qualifier::WRITEONLY);
+            } else if (qualifierString == "readonly"sv) {
+                qualifiers |= uint8_t(Qualifier::READONLY);
+            } else if (qualifierString == "volatile"sv) {
+                qualifiers |= uint8_t(Qualifier::VOLATILE);
+            } else if (qualifierString == "restrict"sv) {
+                qualifiers |= uint8_t(Qualifier::RESTRICT);
+            } else {
+                return Status::invalidArgument("images: invalid qualifier value.");
+            }
+        }
+    }
+
     auto const name = nameValue->toJsonString()->getString();
     auto const format = formatValue->toJsonString()->getString();
-    builder.image(name.data(), format.data());
+    builder.image(name.data(), format.data(), qualifiers);
     return Status::ok();
 }
 

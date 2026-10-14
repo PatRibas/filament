@@ -343,8 +343,8 @@ public:
 
     MaterialBuilder& buffer(filament::BufferInterfaceBlock bib);
 
-    //! Add a writable 2D image parameter to this compute material.
-    MaterialBuilder& image(const char* name, const char* format);
+    //! Add a 2D storage image parameter to this compute material.
+    MaterialBuilder& image(const char* name, const char* format, uint8_t qualifiers = 0);
 
     //! Custom variables (all float4).
     MaterialBuilder& variable(Variable v, const char* name) noexcept;
@@ -826,6 +826,7 @@ public:
     struct Image {
         utils::CString name;
         utils::CString format;
+        uint8_t qualifiers = 0;
     };
     using ImageList = std::vector<Image>;
     using ConstantList = std::vector<Constant>;

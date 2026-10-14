@@ -34,6 +34,13 @@ public:
         CONST_DEVICE,
     };
 
+    enum class Access : uint8_t {
+        SAMPLE,
+        READ,
+        WRITE,
+        READ_WRITE,
+    };
+
     class Builder {
     public:
 
@@ -80,7 +87,8 @@ public:
          * @param type the storage image descriptor type
          */
         Builder& image(size_t index, const std::string& name,
-                filament::backend::DescriptorType type) noexcept;
+                filament::backend::DescriptorType type,
+                Access access = Access::WRITE) noexcept;
 
         MetalArgumentBuffer* build();
 
@@ -119,6 +127,7 @@ public:
             std::string name;
             size_t index;
             filament::backend::DescriptorType type;
+            Access access;
 
             std::ostream& write(std::ostream& os) const;
         };
