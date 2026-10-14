@@ -7,6 +7,90 @@ A new header is inserted each time a *tag* is created.
 Instead, if you are authoring a PR for the main branch, add your release note to
 [NEW_RELEASE_NOTES.md](./NEW_RELEASE_NOTES.md).
 
+## v1.78.1
+
+- build: add tvOS support (`appletvos`/`appletvsimulator`), Metal-only, via `./build.sh -p tvos`
+
+## v1.78.0
+
+- filamat: completely remove the DIR variant bit [⚠️ **New Material Version**]
+- matc: the `directionalLighting` variant filter is deprecated and ignored; it will be removed in
+  a future release
+- matc: remove the deprecated `dynamicLighting` variant filter
+- engine: `Texture::setImage()`, `Texture::setImageAsync()` and `Texture::generateMipmaps()` are
+  now non-const; the const overloads are deprecated
+- engine: `Material::getDefaultInstance() const` is deprecated; use the non-const overload
+- engine: `FrameHistoryStream::getNewFrames()` now consumes the new frames when it returns, rather
+  than as the range is iterated: frames that aren't iterated are no longer returned by the next
+  call, and a range can be iterated more than once. Missing frame IDs just before a PENDING frame
+  are now returned with that frame [⚠️ **API Change**]
+- engine: `Engine::Builder::build()` now also validates the `Engine::Config` when the engine is
+  created asynchronously
+- engine: fix the const `DebugRegistry::getPropertyAddress()` templates, which didn't compile
+- engine: fix a dangling reference to the caller's string in `DebugRegistry::getDataSource()`
+- libs: the `IBLPrefilterContext` filters (`EquirectangularToCubemap`, `IrradianceFilter` and
+  `SpecularFilter`) now take a non-const input `Texture*`; the overloads taking a
+  `Texture const*` are deprecated
+- engine: `TransformManager` now incrementally reorders its components during
+  `Renderer::endFrame()` / `Renderer::skipFrame()`. `TransformManager::Instance` values must not
+  be kept across frames (or across `create()`, `destroy()`, `setParent()`); keep the `Entity` and
+  call `getInstance()` again instead. [⚠️ **API Change**]
+- engine: children orphaned by `TransformManager::destroy()` now have their world transform
+  updated to their local transform, as documented.
+
+## v1.77.3
+
+
+## v1.77.2
+
+- build: Keep exceptions enabled for separately built host tools when `build.sh -E` disables exceptions for the target build.
+- vulkan: report depth and stencil render-target format support correctly
+
+## v1.77.1
+
+- backend: add Metal support for external image handles
+
+## v1.77.0
+
+- filament: fix GCC compilation of the NEON color grading path
+- materials: add `iridescence`, `iridescenceIor` and `iridescenceThickness` to the lit shading models
+- filamat: convert DIR variant into a specialization constant. [⚠️ **Recompile Materials**]
+
+## v1.76.1
+
+- backend: re-enable the `backend_test` build on iOS (opt-in via `INSTALL_BACKEND_TEST`) and record its golden-image hashes
+- vulkan: fix very slow `readPixels` on devices without host-cached staging memory (e.g. PowerVR)
+
+## v1.76.0
+
+- backend: async completion callbacks now take a `backend::AsyncCallStatus` argument reporting
+  whether the operation ran (`COMPLETED`) or was canceled (`CANCELED`). Callers chaining work from
+  a completion callback must check it [⚠️ **API Change**]
+- backend: canceling an async call now always invokes its completion callback, with
+  `AsyncCallStatus::CANCELED`. Previously the callback was silently dropped
+- engine: fix picking on PowerVR OpenGL ES drivers that mishandle dynamic uniform-buffer indexing
+  in fragment shaders [⚠️ **Recompile Materials**]
+- engine: support multiple directional lights, opt-in via
+  `Engine::Config::enableMultipleDirectionalLights`; the dominant one still provides shadows and
+  the sun disc, up to 4 additional directional lights are evaluated without shadows [⚠️ **New
+  Material Version**]
+- materials: a second specular lobe can be defined by setting the `secondRoughness` and
+  `secondRoughnessWeight` properties. This can be used to create hazy materials. These properties
+  require material to declare `apiLevel : 2` (or greater).
+- filamat: completely remove the DYN variant bit.[⚠️ **Recompile Materials**]
+
+## v1.75.1
+
+
+## v1.75.0
+
+- web: expand JS bindings coverage for Fence, SkinningBuffer, MorphTargetBuffer, and other previously unbound APIs
+- variant: compile MNT variant for unlit materials by default. [⚠️ **Recompile Materials**]
+- materials: fix punctual-only shadow receivers selecting the SSR shader. [⚠️ **Recompile Materials**]
+
+## v1.74.1
+
+
 ## v1.73.1
 
 

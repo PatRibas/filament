@@ -47,8 +47,6 @@
 #include <array>
 #include <atomic>
 #include <cctype>
-#include <cstdio>
-#include <cstring>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -201,8 +199,17 @@ ShaderCompilerService::OpenGLProgramToken::~OpenGLProgramToken() {
 ShaderCompilerService::ShaderCompilerService(OpenGLDriver& driver)
         : mDriver(driver),
           mBlobCache(driver.getContext()),
-          mCallbackManager(driver) {
-}
+          mCallbackManager(driver),
+          mParallelShaderCompileDisabled(driver.getDriverConfig().featureFlagManager
+                                                 ? driver.getDriverConfig()
+                                                           .featureFlagManager->features.backend
+                                                           .disable_parallel_shader_compile
+                                                 : false),
+          mAmortizedShaderCompileDisabled(driver.getDriverConfig().featureFlagManager
+                                                  ? driver.getDriverConfig()
+                                                            .featureFlagManager->features.backend
+                                                            .disable_amortized_shader_compile
+                                                 : false) {}
 
 ShaderCompilerService::~ShaderCompilerService() noexcept = default;
 
@@ -218,7 +225,7 @@ void ShaderCompilerService::init() noexcept {
                 "backend.enable_priority_override_mitigation").value_or(true);
     }
 
-    if (UTILS_UNLIKELY(mDriver.getDriverConfig().disableParallelShaderCompile)) {
+    if (UTILS_UNLIKELY(mParallelShaderCompileDisabled)) {
         // user disabled parallel shader compile
         mMode = Mode::SYNCHRONOUS;
         return;
@@ -277,7 +284,6 @@ void ShaderCompilerService::init() noexcept {
         }
 
         mShaderCompilerThreadCount = poolSize;
-        mCompilerThreadPriority = priority;
         mCompilerThreadPool.init(mShaderCompilerThreadCount,
                 [&platform = mDriver.mPlatform, priority] {
                     // give the thread a name
@@ -409,7 +415,7 @@ void ShaderCompilerService::compileProgram(
                         // of the linking. We don't need to check the result of the program here
                         // because it'll be done in the engine thread.
                         token->signal();
-                        token->priorityOverride.restoreDefaultPriority(mCompilerThreadPriority);
+                        token->priorityOverride.restorePriority();
                         // Updates the token's state. If the token is canceled while this function
                         // executes, this update notifies `tick` that GL resource loading is
                         // complete, allowing `tick` to proceed with resource destruction.
@@ -702,13 +708,13 @@ void ShaderCompilerService::executeTickOps() {
 }
 
 bool ShaderCompilerService::shouldCompileSynchronousProgramThisTick() const noexcept {
-    return mDriver.getDriverConfig().disableAmortizedShaderCompile ||
-            (mNumProgramsCreatedSynchronouslyThisTick < MAX_NUM_SYNCHRONOUS_PROGRAMS_PER_FRAME &&
-                    mNumTicksUntilNextSynchronousProgram == 0);
+    return mAmortizedShaderCompileDisabled ||
+           (mNumProgramsCreatedSynchronouslyThisTick < MAX_NUM_SYNCHRONOUS_PROGRAMS_PER_FRAME &&
+                   mNumTicksUntilNextSynchronousProgram == 0);
 }
 
 void ShaderCompilerService::compilePendingSynchronousPrograms() {
-    if (mDriver.getDriverConfig().disableAmortizedShaderCompile) {
+    if (mAmortizedShaderCompileDisabled) {
         return;
     }
 
@@ -727,7 +733,7 @@ void ShaderCompilerService::compilePendingSynchronousPrograms() {
 
 void ShaderCompilerService::compilePendingSynchronousProgramNow(
         program_token_t const& token) {
-    if (mDriver.getDriverConfig().disableAmortizedShaderCompile) {
+    if (mAmortizedShaderCompileDisabled) {
         return;
     }
 
@@ -742,7 +748,7 @@ void ShaderCompilerService::compilePendingSynchronousProgramNow(
 }
 
 void ShaderCompilerService::cancelPendingSynchronousProgram(program_token_t const& token) noexcept {
-    if (mDriver.getDriverConfig().disableAmortizedShaderCompile) {
+    if (mAmortizedShaderCompileDisabled) {
         return;
     }
 
@@ -822,39 +828,6 @@ void ShaderCompilerService::cancelPendingSynchronousProgram(program_token_t cons
             // replace the value of layout(num_views = X) for multiview extension
             if (multiview && stage == ShaderStage::VERTEX) {
                 process_OVR_multiview2(context, numViews, shader_src, shader_len);
-            }
-
-            // Workaround for drivers (e.g. ANGLE-on-D3D11) that don't fold a spec-constant-
-            // initialized `const int CONFIG_MAX_INSTANCES = SPIRV_CROSS_CONSTANT_ID_1` into the
-            // uniform-block array size `PerRenderableData data[CONFIG_MAX_INSTANCES]`. They lay
-            // the block out with the matc-baked default (CONFIG_MAX_INSTANCES is 64 in matc),
-            // while the engine binds the runtime size (8 on web), so every instanced draw trips
-            // "uniform buffer too small" and the draw is dropped, leaving lit materials black.
-            // Rewrite the symbolic array length to the literal the engine actually binds
-            // (preserving byte count with trailing spaces) so the GLSL compiler can't get it
-            // wrong. Spec-constant-aware revival of the 2022 hack at commit fe3790cb9 (#5859),
-            // removed when spec constants were assumed portable.
-            if (context.bugs.spec_constant_array_size_not_folded) {
-                // Matches ReservedSpecializationConstants::CONFIG_MAX_INSTANCES; we can't include
-                // EngineEnums.h here (layering), same precedent as CONFIG_STEREO_EYE_COUNT above.
-                constexpr size_t CONFIG_MAX_INSTANCES_ID = 1;
-                if (specializationConstants.size() > CONFIG_MAX_INSTANCES_ID) {
-                    int32_t const maxInstances = std::get<int32_t>(
-                            specializationConstants[CONFIG_MAX_INSTANCES_ID]);
-                    constexpr std::string_view symbolic = "[CONFIG_MAX_INSTANCES]";
-                    char replacement[symbolic.size() + 1];
-                    int const n = std::snprintf(
-                            replacement, sizeof(replacement), "[%d", maxInstances);
-                    if (n > 0 && size_t(n) < symbolic.size()) {
-                        std::memset(replacement + n, ' ', symbolic.size() - n - 1);
-                        replacement[symbolic.size() - 1] = ']';
-                        std::string_view const view{ shader_src, shader_len };
-                        for (size_t p = view.find(symbolic); p != std::string_view::npos;
-                                p = view.find(symbolic, p + symbolic.size())) {
-                            std::memcpy(shader_src + p, replacement, symbolic.size());
-                        }
-                    }
-                }
             }
 
             // add support for ARB_shading_language_packing if needed
@@ -1015,6 +988,10 @@ void ShaderCompilerService::cancelPendingSynchronousProgram(program_token_t cons
     }
     token->retrievedFromBlobCache = true;
     token->signal(); // notify that `token->gl.program` is ready to use
+    // The program is ready, so the callback handle must be submitted. The compilation path does
+    // this in `linkProgram`, which a cache hit skips. Must follow `signal()` so that a caller woken
+    // by the callback doesn't block in `wait()`.
+    token->trySubmittingCallback();
     return true;
 }
 

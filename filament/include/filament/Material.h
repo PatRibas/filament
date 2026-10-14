@@ -27,6 +27,7 @@
 
 #include <utils/compiler.h>
 #include <utils/Invocable.h>
+#include <utils/Slice.h>
 
 #include <math/mathfwd.h>
 #include <math/vec3.h>
@@ -60,7 +61,7 @@ class Engine;
  * A Material is a template from which MaterialInstance objects can be created.
  *
  */
-class UTILS_PUBLIC Material : public FilamentAPI {
+class UTILS_PUBLIC UTILS_APIGEN_USED_BY_NATIVE Material : public FilamentAPI {
     struct BuilderDetails;
 
 public:
@@ -69,6 +70,11 @@ public:
     using Interpolation = filament::Interpolation;
     using VertexDomain = filament::VertexDomain;
     using TransparencyMode = filament::TransparencyMode;
+    using UserVariantFilterBit = filament::UserVariantFilterBit;
+    using RefractionMode = filament::RefractionMode;
+    using RefractionType = filament::RefractionType;
+    using ReflectionMode = filament::ReflectionMode;
+    using MaterialDomain = filament::MaterialDomain;
 
     using ParameterType = backend::UniformType;
     using Precision = backend::Precision;
@@ -135,10 +141,15 @@ public:
          * Specifies the material data. The material data is a binary blob produced by
          * libfilamat or by matc.
          *
-         * @param payload Pointer to the material data, must stay valid until build() is called.
-         * @param size Size of the material data pointed to by "payload" in bytes.
+         * @param payload Slice of the material data, must stay valid until build() is called.
          */
-        Builder& package(const void* UTILS_NONNULL payload, size_t size);
+        UTILS_APIGEN_ALTERNATE_NAME(payload)
+        Builder& package(utils::Slice<const uint8_t> payload);
+
+        UTILS_NOAPIGEN
+        inline Builder& package(const void* UTILS_NONNULL payload, size_t size) {
+            return package({ static_cast<const uint8_t*>(payload), size });
+        }
 
         template<typename T>
         using is_supported_constant_parameter_t =
@@ -158,10 +169,12 @@ public:
          *              in the material definition.
          */
         template<typename T, typename = is_supported_constant_parameter_t<T>>
+        UTILS_NOAPIGEN
         Builder& constant(const char* UTILS_NONNULL name, size_t nameLength, T value);
 
         /** inline helper to provide the constant name as a null-terminated C string */
         template<typename T, typename = is_supported_constant_parameter_t<T>>
+        UTILS_NOAPIGEN
         inline Builder& constant(const char* UTILS_NONNULL name, T value) {
             return constant(name, strlen(name), value);
         }
@@ -269,6 +282,7 @@ public:
             backend::CallbackHandler* UTILS_NULLABLE handler = nullptr,
             utils::Invocable<void(Material* UTILS_NONNULL)>&& callback = {}) noexcept;
 
+    UTILS_NOAPIGEN
     inline void compile(CompilerPriorityQueue priority,
             UserVariantFilterBit variants,
             backend::CallbackHandler* UTILS_NULLABLE handler = nullptr,
@@ -277,6 +291,7 @@ public:
                 std::forward<utils::Invocable<void(Material* UTILS_NONNULL)>>(callback));
     }
 
+    UTILS_NOAPIGEN
     inline void compile(CompilerPriorityQueue priority,
             backend::CallbackHandler* UTILS_NULLABLE handler = nullptr,
             utils::Invocable<void(Material* UTILS_NONNULL)>&& callback = {}) noexcept {
@@ -394,6 +409,7 @@ public:
     bool hasParameter(const char* UTILS_NONNULL name) const noexcept;
 
     //! Indicates whether a parameter of the given name exists on this material.
+    UTILS_NOAPIGEN
     bool hasParameter(std::string_view name) const noexcept;
 
     //! Indicates whether an existing parameter is a sampler or not.
@@ -417,6 +433,9 @@ public:
     const char* UTILS_NULLABLE getParameterTransformName(
             const char* UTILS_NONNULL samplerName) const noexcept;
 
+    template<typename T>
+    using is_supported_parameter_t = MaterialInstance::is_supported_parameter_t<T>;
+
     /**
      * Sets the value of the given parameter on this material's default instance.
      *
@@ -425,9 +444,29 @@ public:
      *
      * @see getDefaultInstance()
      */
-    template <typename T>
+    template <typename T, typename = is_supported_parameter_t<T>>
     void setDefaultParameter(const char* UTILS_NONNULL name, T value) noexcept {
         getDefaultInstance()->setParameter(name, value);
+    }
+
+    /**
+     * Sets the value of the given parameter array on this material's default instance.
+     *
+     * @param name The name of the material parameter
+     * @param values A slice of values
+     *
+     * @see getDefaultInstance()
+     */
+    template <typename T, typename = is_supported_parameter_t<T>>
+    void setDefaultParameter(std::string_view name,
+            UTILS_APIGEN_TAGGED_ARRAY utils::Slice<const T> values) noexcept {
+        getDefaultInstance()->setParameter<T>(name, values);
+    }
+
+    template <typename T, typename = is_supported_parameter_t<T>>
+    UTILS_NOAPIGEN
+    inline void setDefaultParameter(const char* UTILS_NONNULL name, const T* UTILS_NONNULL values, size_t count) noexcept {
+        setDefaultParameter<T>(std::string_view(name), { values, count });
     }
 
     /**
@@ -473,8 +512,12 @@ public:
     //! Returns this material's default instance.
     MaterialInstance* UTILS_NONNULL getDefaultInstance() noexcept;
 
-    //! Returns this material's default instance.
-    MaterialInstance const* UTILS_NONNULL getDefaultInstance() const noexcept;
+    /** @deprecated Use non-const getDefaultInstance() instead. */
+    UTILS_DEPRECATED
+    UTILS_NOAPIGEN
+    MaterialInstance const* UTILS_NONNULL getDefaultInstance() const noexcept {
+        return const_cast<Material*>(this)->getDefaultInstance();
+    }
 
 protected:
     // prevent heap allocation

@@ -33,6 +33,8 @@ struct MaterialVertexInputs {
 #endif // MATERIAL_HAS_CLIP_SPACE_TRANSFORM
 #if defined(MATERIAL_HAS_CLIP_SPACE_POSITION) && CLIENT_MATERIAL_API_LEVEL >= UNSTABLE_MATERIAL_API_LEVEL
     vec4 clipSpacePosition;
+#elif defined(MATERIAL_HAS_CLIP_SPACE_POSITION)
+#define clipSpacePosition ERROR_clipSpacePosition_api_level_2_END
 #endif // MATERIAL_HAS_CLIP_SPACE_POSITION
 #endif // VERTEX_DOMAIN_DEVICE
 };
@@ -84,7 +86,11 @@ void initMaterialVertex(out MaterialVertexInputs material) {
 #if defined(VARIABLE_CUSTOM4) && !defined(HAS_ATTRIBUTE_COLOR)
     material.VARIABLE_CUSTOM4 = vec4(0.0);
 #endif
+#if defined(VERTEX_DOMAIN_DEVICE) && defined(MATERIAL_HAS_CLIP_SPACE_POSITION) && CLIENT_MATERIAL_API_LEVEL >= UNSTABLE_MATERIAL_API_LEVEL
+    material.worldPosition = vec4(0.0);
+#else
     material.worldPosition = computeWorldPosition();
+#endif
 #ifdef VERTEX_DOMAIN_DEVICE
 #ifdef MATERIAL_HAS_CLIP_SPACE_TRANSFORM
     material.clipSpaceTransform = mat4(1.0);

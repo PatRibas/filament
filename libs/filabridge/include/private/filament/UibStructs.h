@@ -83,6 +83,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     math::mat4f eyeFromViewMatrix[CONFIG_MAX_STEREOSCOPIC_EYES];   // clip    eye  <- view    world
     math::mat4f clipFromWorldMatrix[CONFIG_MAX_STEREOSCOPIC_EYES]; // clip <- eye  <- view <- world
     math::mat4f worldFromClipMatrix;    // clip -> view -> world
+    std140::mat33 worldRayFromClipMatrix;
     math::mat4f userWorldFromWorldMatrix;   // userWorld <- world
     math::float4 clipTransform;             // [sx, sy, tx, ty] only used by VERTEX_DOMAIN_DEVICE
 
@@ -119,7 +120,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     float aoBentNormals;                        // 0: no AO bent normal, >0.0 AO bent normals
 
     // --------------------------------------------------------------------------------------------
-    // Dynamic Lighting [variant: DYN]
+    // Dynamic Lighting (controlled via dynamic specialization constants)
     // --------------------------------------------------------------------------------------------
     math::float4 zParams;                       // froxel Z parameters
     math::uint3 fParams;                        // stride-x, stride-y, stride-z
@@ -163,7 +164,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     // bit 0-3: cascade count
     // bit 8-11: cascade has visible shadows
     int32_t cascades;
-    float shadowPenumbraRatioScale;             // For DPCF or PCSS, scale penumbra ratio for artistic use
+    float reservedLight0;
     math::float2 lightFarAttenuationParams;     // a, a/far (a=1/pct-of-far)
 
     // --------------------------------------------------------------------------------------------
@@ -194,7 +195,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     math::float2 fogReserved0;
 
     // --------------------------------------------------------------------------------------------
-    // Screen-space reflections [variant: SSR (i.e.: VSM | SRE)]
+    // Screen-space reflections [variant: SSR (i.e.: MNT | PCK | DEP)]
     // --------------------------------------------------------------------------------------------
     math::mat4f ssrReprojection;
     math::mat4f ssrUvFromViewMatrix;
@@ -216,8 +217,21 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     float es2Reserved1;
     float es2Reserved2;
 
+    // --------------------------------------------------------------------------------------------
+    // Extra directional lights, in addition to the dominant one [variant: DIR]
+    // These are evaluated without shadows and without the sun disc.
+    // --------------------------------------------------------------------------------------------
+    // xyz: normalized direction towards the light, w: light channel bits
+    math::float4 extraLightDirection[CONFIG_MAX_EXTRA_DIRECTIONAL_LIGHTS];
+    // rgb: color, w: intensity, premultiplied by the exposure
+    math::float4 extraLightColorIntensity[CONFIG_MAX_EXTRA_DIRECTIONAL_LIGHTS];
+    int32_t extraLightCount;            // number of valid entries in the arrays above
+    int32_t extraDirReserved0;
+    int32_t extraDirReserved1;
+    int32_t extraDirReserved2;
+
     // bring PerViewUib to 2 KiB
-    math::float4 reserved[21];
+    math::float4 reserved[9];
 };
 
 // 2 KiB == 128 float4s
@@ -300,16 +314,16 @@ static_assert(sizeof(LightsUib) == 64,
 struct ShadowUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     static constexpr std::string_view _name{ "ShadowUniforms" };
     struct alignas(16) ShadowData {
-        math::mat4f lightFromWorldMatrix;       // 64
-        math::float4 lightFromWorldZ;           // 16
-        math::float4 scissorNormalized;         // 16
-        float bulbRadiusLs;                     //  4
-        float nearOverFarMinusNear;             //  4
-        math::float2 normalBias;                //  4
-        bool elvsm;                             //  4   // could be 1 bit
-        uint32_t layer;                         //  4   // could be 8 bits
-        float vsmExponent;                      //  4   // could be fp16
-        uint32_t reserved2;                     //  4
+        math::mat4f lightFromWorldMatrix;               // 64
+        math::float4 lightFromWorldZ;                   // 16
+        math::float4 scissorNormalized;                 // 16
+        math::float2 normalBias;                        //  8   // for EVSM/PCSS must be zero
+        float projectionParam;                          //  4   // ortho (far-near), perspective near/(far-near)
+        float wsOneOverTexelSizeAtOneMeter;             //  4   // for spot/point lights
+        uint32_t maxMipLevel_maxSearchRadius;           //  4   // packed half2
+        uint32_t bulbRadius_vsmExponent;                //  4   // packed half2
+        uint32_t maxPenumbraRatio_penumbraRatioScale;   //  4   // packed half2
+        uint32_t evsm4_layer;                           //  4   // 0x00.00.01.FF
     };
     ShadowData shadows[CONFIG_MAX_SHADOWMAPS];
 };

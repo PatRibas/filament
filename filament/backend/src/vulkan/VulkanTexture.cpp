@@ -386,17 +386,17 @@ VulkanTexture::VulkanTexture(VulkanContext const& context, VkDevice device, VmaA
         fvkmemory::ResourceManager* resourceManager, VulkanCommands* commands, VkImage image,
         VkDeviceMemory memory, VkFormat format, VkSamplerYcbcrConversion conversion,
         VkDeviceMemory stagingMemory, VkBuffer stagingBuffer, Platform::ExternalImageHandle ahBuffer,
-        uint8_t samples, uint32_t width, uint32_t height, uint32_t depth, TextureUsage tusage,
-        VulkanStagePool& stagePool)
-    : HwTexture(getSamplerTypeFromDepth(depth), 1, samples, width, height, depth,
+        uint8_t levels, uint8_t samples, uint32_t width, uint32_t height, uint32_t depth,
+        TextureUsage tusage, VulkanStagePool& stagePool)
+    : HwTexture(getSamplerTypeFromDepth(depth), levels, samples, width, height, depth,
               TextureFormat::UNUSED, tusage, false),
       mState(fvkmemory::resource_ptr<VulkanTextureState>::construct(resourceManager, stagePool,
               commands, allocator, device, image, memory,
               stagingMemory, stagingBuffer, ahBuffer,
               format, fvkutils::getViewType(SamplerType::SAMPLER_2D),
-              /*mipLevels=*/1, getLayerCountFromDepth(depth), conversion,
+              /*mipLevels=*/levels, getLayerCountFromDepth(depth), conversion,
               getUsage(context, samples, VK_NULL_HANDLE, format, tusage),
-              any(usage & TextureUsage::PROTECTED))) {
+              any(tusage & TextureUsage::PROTECTED))) {
     mPrimaryViewRange = mState->mFullViewRange;
 }
 
@@ -661,7 +661,8 @@ void VulkanTexture::updateImage(const PixelBufferDescriptor& data, uint32_t widt
 void VulkanTexture::updateImageWithBlit(const PixelBufferDescriptor& data, uint32_t width,
         uint32_t height, uint32_t depth, uint32_t xoffset, uint32_t yoffset, uint32_t zoffset,
         uint32_t miplevel) {
-    // Otherwise, use vkCmdCopyBufferToImage.
+    // Uploads the host data into a staging image of the host format, then uses vkCmdBlitImage
+    // to convert it into the texture's format.
     size_t const bpp = PixelBufferDescriptor::computeDataSize(data.format, data.type, 1, 1, 1);
     // Note: if bpp = 0, we're dealing with a compressed format; we should fall
     // back to the buffer's size.
@@ -688,21 +689,69 @@ void VulkanTexture::updateImageWithBlit(const PixelBufferDescriptor& data, uint3
     // 2D image tall enough to hold all slices vertically. The contiguous nature of
     // adjustedMemcpy perfectly matches this layout, allowing us to easily copy the chunks
     // into the 3D destination via multiple VkImageBlit regions.
+    // When the staging image uses optimal tiling (see VulkanStageImage::tiling()), the same
+    // layout is kept so that the tightly packed host data can be filled with a single
+    // vkCmdCopyBufferToImage before blitting.
     uint32_t const numSlices = dstDepth > layerCount ? dstDepth : layerCount;
     uint32_t const stagingHeight = height * numSlices;
 
-    void* mapped = nullptr;
-    fvkmemory::resource_ptr<VulkanStageImage::Resource> stage
-            = mState->mStagePool.acquireImage(data.format, data.type, width, stagingHeight);
-    vmaMapMemory(mState->mAllocator, stage->memory(), &mapped);
-    adjustedMemcpy(mapped, data, width, height, depth);
-    vmaUnmapMemory(mState->mAllocator, stage->memory());
-    vmaFlushAllocation(mState->mAllocator, stage->memory(), 0, writeSize);
+    fvkmemory::resource_ptr<VulkanStageImage::Resource> stage =
+            mState->mStagePool.acquireImage(data.format, data.type, width, stagingHeight);
 
     VulkanCommandBuffer& commands = mState->mCommands->get();
     VkCommandBuffer const cmdbuf = commands.buffer();
     commands.acquire(stage);
     commands.acquire(fvkmemory::resource_ptr<VulkanTexture>::cast(this));
+
+    if (stage->tiling() == VK_IMAGE_TILING_LINEAR) {
+        // The staging image is host-visible, so write directly into it.
+        void* mapped = nullptr;
+        vmaMapMemory(mState->mAllocator, stage->memory(), &mapped);
+        adjustedMemcpy(mapped, data, width, height, depth);
+        vmaUnmapMemory(mState->mAllocator, stage->memory());
+        vmaFlushAllocation(mState->mAllocator, stage->memory(), 0, writeSize);
+    } else {
+        // The device does not support blitting from a linear image of this format, so the
+        // staging image uses optimal tiling. Fill it with a buffer-to-image copy instead.
+        uint8_t const alignment = getAlignmentForBufferToImageCopy(stage->format());
+        fvkmemory::resource_ptr<VulkanStage::Segment> stageSegment =
+                mState->mStagePool.acquireStage(writeSize, alignment);
+        assert_invariant(stageSegment->memory());
+        adjustedMemcpy(stageSegment->mapping(), data, width, height, depth);
+        vmaFlushAllocation(mState->mAllocator, stageSegment->memory(), stageSegment->offset(),
+                writeSize);
+        commands.acquire(stageSegment);
+
+        VkImageAspectFlags const stageAspect = fvkutils::getImageAspect(stage->format());
+        VkImageSubresourceRange const stageRange = { stageAspect, 0, 1, 0, 1 };
+
+        // The staging image's previous contents are discarded, but we still transition from
+        // TRANSFER_SRC so that any prior blit reading from this image completes first.
+        fvkutils::transitionLayout(cmdbuf, {
+                                               .image = stage->image(),
+                                               .oldLayout = VulkanLayout::TRANSFER_SRC,
+                                               .newLayout = VulkanLayout::TRANSFER_DST,
+                                               .subresources = stageRange,
+                                           });
+
+        VkBufferImageCopy const copyRegion = {
+            .bufferOffset = stageSegment->offset(),
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = { stageAspect, 0, 0, 1 },
+            .imageOffset = { 0, 0, 0 },
+            .imageExtent = { width, stagingHeight, 1 },
+        };
+        vkCmdCopyBufferToImage(cmdbuf, stageSegment->buffer(), stage->image(),
+                fvkutils::getVkLayout(VulkanLayout::TRANSFER_DST), 1, &copyRegion);
+
+        fvkutils::transitionLayout(cmdbuf, {
+                                               .image = stage->image(),
+                                               .oldLayout = VulkanLayout::TRANSFER_DST,
+                                               .newLayout = VulkanLayout::TRANSFER_SRC,
+                                               .subresources = stageRange,
+                                           });
+    }
 
     VkImageAspectFlags const aspect = getImageAspect();
     VkImageSubresourceRange const range = { aspect, miplevel, 1, layer, layerCount };

@@ -97,6 +97,8 @@ option(FILAMENT_DISABLE_GTAO "Disable GTAO" OFF)
 
 option(FILAMENT_BUILD_TESTING "Build tests" ON)
 
+option(FILAMENT_DEBUG_MUTEX "Enable utils::Mutex lock order and deadlock debugging" OFF)
+
 set(FILAMENT_NDK_VERSION "" CACHE STRING
     "Android NDK version or version prefix to be used when building for Android."
 )
@@ -121,6 +123,10 @@ set(FILAMENT_METAL_HANDLE_ARENA_SIZE_IN_MB "8" CACHE STRING
     "Size of the Metal handle arena, default 8."
 )
 
+set(FILAMENT_VULKAN_HANDLE_ARENA_SIZE_IN_MB "8" CACHE STRING
+    "Size of the Vulkan handle arena, default 8."
+)
+
 set(FILAMENT_BACKEND_DEBUG_FLAG "" CACHE STRING
     "A debug flag meant for enabling/disabling backend debugging paths"
 )
@@ -139,6 +145,10 @@ endif()
 
 if (NOT FILAMENT_ENABLE_RTTI)
     add_compile_options(-fno-rtti)
+endif()
+
+if (FILAMENT_DEBUG_MUTEX)
+    add_compile_definitions(FILAMENT_DEBUG_MUTEX)
 endif()
 
 # ==================================================================================================
@@ -200,7 +210,7 @@ if (NOT FILAMENT_OSMESA_PATH STREQUAL "")
     if (NOT EXISTS ${FILAMENT_OSMESA_PATH}/)
         message(FATAL_ERROR "Cannot find specified OSMesa build directory: ${FILAMENT_OSMESA_PATH}")
     endif()
-    set(FILAMENT_SUPPORTS_OSMESA TRUE)
+    set(FILAMENT_SUPPORTS_OSMESA TRUE CACHE BOOL "Enable OSMesa (headless GL context) for Filament" FORCE)
 endif()
 
 if (LINUX)
@@ -235,6 +245,9 @@ endif()
 
 if (ANDROID)
     add_definitions(-D__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
+    if (FILAMENT_ANDROID_PLATFORM_API_LEVEL)
+        add_definitions(-DFILAMENT_ANDROID_PLATFORM_API_LEVEL=${FILAMENT_ANDROID_PLATFORM_API_LEVEL})
+    endif()
 endif()
 
 if (NOT ANDROID AND NOT WASM AND NOT IOS AND NOT FILAMENT_LINUX_IS_MOBILE)
@@ -935,7 +948,11 @@ add_subdirectory(${EXTERNAL}/cgltf/tnt)
 add_subdirectory(${EXTERNAL}/draco/tnt)
 add_subdirectory(${EXTERNAL}/jsmn/tnt)
 add_subdirectory(${EXTERNAL}/stb/tnt)
-add_subdirectory(${EXTERNAL}/perfetto/tnt)
+if (NOT APPLETV)
+    # Perfetto's subprocess support uses fork()/exec*(), which are __TVOS_PROHIBITED.
+    # The library is only consumed on Android (FILAMENT_ENABLE_PERFETTO).
+    add_subdirectory(${EXTERNAL}/perfetto/tnt)
+endif()
 add_subdirectory(${EXTERNAL}/basisu/tnt)
 
 # imageio-lite is needed for viewer
@@ -983,24 +1000,35 @@ add_subdirectory(${FILAMENT}/filament)
 
 set(FILAMENT_SAMPLES_BINARY_DIR ${PROJECT_BINARY_DIR}/samples)
 
+# assimp is only used by filamentapp's MeshAssimp, which is not built for WASM.
+if (IS_HOST_PLATFORM OR ANDROID)
+   add_subdirectory(${EXTERNAL}/libassimp/tnt)
+endif()
+
+# filamentapp must come before the web/ subdirectories so that its target is
+# already defined when the WASM samples link against it.
+if (IS_HOST_PLATFORM OR ANDROID OR WASM)
+   add_subdirectory(${LIBRARIES}/filamentapp)
+endif()
+
 if (WASM)
     add_subdirectory(web/filament-js)
     add_subdirectory(web/examples)
+    # Excluded from the default build so that building filament.js does not also build the
+    # samples, their resources, and the IBL cmgen produces for them. Build the samples through
+    # the filament-samples target, or name one, e.g. gltf_viewer.
+    add_subdirectory(${FILAMENT}/samples EXCLUDE_FROM_ALL)
 endif()
 
 if (IS_HOST_PLATFORM)
     if (FILAMENT_SUPPORTS_OPENGL)
         add_subdirectory(${LIBRARIES}/bluegl)
     endif()
-    if (NOT FILAMENT_SKIP_SDL2)
-      add_subdirectory(${LIBRARIES}/filamentapp)
-    endif()
     add_subdirectory(${LIBRARIES}/imageio)
     add_subdirectory(${LIBRARIES}/filament-matp)
 
     add_subdirectory(${FILAMENT}/samples)
 
-    add_subdirectory(${EXTERNAL}/libassimp/tnt)
     add_subdirectory(${EXTERNAL}/libpng/tnt)
     add_subdirectory(${EXTERNAL}/libsdl2/tnt)
     add_subdirectory(${EXTERNAL}/libz/tnt)
@@ -1029,4 +1057,9 @@ endif()
 # Generate exported executables for cross-compiled builds (Android, WASM, and iOS)
 if ((NOT CMAKE_CROSSCOMPILING AND NOT FILAMENT_IMPORT_PREBUILT_EXECUTABLES) OR FILAMENT_EXPORT_PREBUILT_EXECUTABLES)
     export(TARGETS matc cmgen filamesh mipgen resgen uberz glslminifier FILE ${IMPORT_EXECUTABLES})
+endif()
+
+# Builds libfilament-samples.a, which the sample-cpp-viewer Android app links against.
+if (ANDROID)
+    add_subdirectory(${FILAMENT}/samples)
 endif()

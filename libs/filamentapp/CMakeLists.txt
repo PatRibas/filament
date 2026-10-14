@@ -8,6 +8,30 @@ endif()
 set(TARGET filamentapp)
 set(PUBLIC_HDR_DIR include)
 
+# MeshAssimp depends on assimp and on filamat, neither of which is available for WASM. The samples
+# that use it are host-only anyway.
+if (WASM)
+    set(FILAMENTAPP_HAS_ASSIMP FALSE)
+else()
+    set(FILAMENTAPP_HAS_ASSIMP TRUE)
+endif()
+
+# SDL and the civetweb-based remote web UI are desktop-only. ImGui, on the other hand, is also
+# needed for WASM: batch (automation) mode is driven from the ImGui callback.
+if (IS_HOST_PLATFORM)
+    set(FILAMENTAPP_HAS_SDL TRUE)
+    set(FILAMENTAPP_HAS_WEB_UI TRUE)
+else()
+    set(FILAMENTAPP_HAS_SDL FALSE)
+    set(FILAMENTAPP_HAS_WEB_UI FALSE)
+endif()
+
+if (IS_HOST_PLATFORM OR WASM)
+    set(FILAMENTAPP_HAS_IMGUI TRUE)
+else()
+    set(FILAMENTAPP_HAS_IMGUI FALSE)
+endif()
+
 set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(GENERATION_ROOT ${CMAKE_CURRENT_BINARY_DIR})
 set(RESOURCE_DIR  "${GENERATION_ROOT}/generated/resources")
@@ -19,14 +43,17 @@ set(MATERIAL_DIR  "${GENERATION_ROOT}/generated/material")
 
 set(PUBLIC_HDRS
         include/filamentapp/AssetLoader.h
+        include/filamentapp/AssetWriter.h
         include/filamentapp/DesktopAssetLoader.h
+        include/filamentapp/DesktopAssetWriter.h
         include/filamentapp/Config.h
         include/filamentapp/Cube.h
         include/filamentapp/Grid.h
         include/filamentapp/FilamentApp.h
+        include/filamentapp/FilamentApp2.h
+        include/filamentapp/HeadlessDisplayManager.h
         include/filamentapp/IBL.h
         include/filamentapp/IcoSphere.h
-        include/filamentapp/MeshAssimp.h
         include/filamentapp/NativeWindowHelper.h
         include/filamentapp/Sphere.h
 )
@@ -34,22 +61,50 @@ set(PUBLIC_HDRS
 set(SRCS
         src/Cube.cpp
         src/DesktopAssetLoader.cpp
+        src/DesktopAssetWriter.cpp
         src/Grid.cpp
         src/FilamentApp.cpp
+        src/FilamentApp2.cpp
+        src/display_managers/HeadlessDisplayManager.cpp
         src/IBL.cpp
         src/IcoSphere.cpp
-        src/MeshAssimp.cpp
         src/Sphere.cpp
         src/PlatformHelper.cpp
         src/PlatformHelper.h
-        src/KeyInputConversion.h
-        src/DisplayManager.h
-        src/AppEvent.h
-        src/display_managers/SDLDisplayManager.h
-        src/display_managers/SDLDisplayManager.cpp
-        src/display_managers/HtmlDisplayManager.h
-        src/display_managers/HtmlDisplayManager.cpp
+        include/filamentapp/DisplayManager.h
+        include/filamentapp/AppEvent.h
+        src/FilamentAppGui.h
+        src/FilamentAppGui.cpp
 )
+
+if (FILAMENTAPP_HAS_ASSIMP)
+    list(APPEND PUBLIC_HDRS
+            include/filamentapp/MeshAssimp.h
+    )
+    list(APPEND SRCS
+            src/MeshAssimp.cpp
+    )
+endif()
+
+if (IS_HOST_PLATFORM)
+    list(APPEND PUBLIC_HDRS
+            include/filamentapp/SDLDisplayManager.h
+            include/filamentapp/HtmlDisplayManager.h
+    )
+    list(APPEND SRCS
+            src/display_managers/SDLDisplayManager.cpp
+            src/display_managers/HtmlDisplayManager.cpp
+    )
+endif()
+
+if (WASM)
+    list(APPEND PUBLIC_HDRS
+            include/filamentapp/EmscriptenDisplayManager.h
+    )
+    list(APPEND SRCS
+            src/display_managers/EmscriptenDisplayManager.cpp
+    )
+endif()
 
 if (FILAMENT_SUPPORTS_VULKAN)
     list(APPEND SRCS
@@ -59,23 +114,40 @@ if (FILAMENT_SUPPORTS_VULKAN)
 endif()
 
 set(LIBS
-        assimp
         camutils
-        civetweb
-        filagui
-        filamat
         filament
         filament-iblprefilter
         geometry
         image
-        imageio
-        imgui
+        imageio-lite
         ktxreader
         math
-        sdl2
         stb
         utils
 )
+
+if (FILAMENTAPP_HAS_ASSIMP)
+    # filamat is only needed by MeshAssimp, which builds materials at runtime.
+    list(APPEND LIBS
+        assimp
+        filamat
+    )
+endif()
+
+if (FILAMENTAPP_HAS_IMGUI)
+    list(APPEND LIBS
+        filagui
+        imgui
+    )
+endif()
+
+if (IS_HOST_PLATFORM)
+    list(APPEND LIBS
+        civetweb
+        imageio
+        sdl2
+    )
+endif()
 
 set(MATERIAL_SRCS
         materials/aiDefaultMat.mat
@@ -125,6 +197,10 @@ if (ANDROID)
     if (FILAMENT_SUPPORTS_WEBGPU)
         list(APPEND SRCS src/backend_platforms/WebGPUPlatformHelperAndroid.cpp)
     endif()
+endif()
+
+if (WASM AND FILAMENT_SUPPORTS_WEBGPU)
+    list(APPEND SRCS src/backend_platforms/WebGPUPlatformHelperWasm.cpp)
 endif()
 
 # ==================================================================================================
@@ -220,15 +296,30 @@ include_directories(${PUBLIC_HDR_DIR})
 
 add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
 
-if (FILAMENT_SUPPORTS_WEBGPU)
+# For WASM the WebGPU headers come from the emdawnwebgpu port (--use-port in CMAKE_CXX_FLAGS)
+# rather than from a Dawn build, so there is no dawncpp_headers target to link.
+if (FILAMENT_SUPPORTS_WEBGPU AND NOT WASM)
 target_link_libraries(${TARGET} PRIVATE dawncpp_headers)
 endif()
 
-target_link_libraries(${TARGET} PUBLIC ${LIBS} filamentapp-resources filamentapp-web-resources)
+if (IS_HOST_PLATFORM)
+    target_link_libraries(${TARGET} PUBLIC ${LIBS} filamentapp-resources filamentapp-web-resources)
+else()
+    target_link_libraries(${TARGET} PUBLIC ${LIBS} filamentapp-resources)
+endif()
 
 target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
-target_include_directories(${TARGET} PRIVATE ${GENERATION_ROOT})
+target_include_directories(${TARGET} PRIVATE
+        ${GENERATION_ROOT}
+        ${ROOT_DIR}/imageio/include
+)
+
+if (FILAMENTAPP_HAS_ASSIMP)
+    target_include_directories(${TARGET} PRIVATE
+            ${ROOT_DIR}/../third_party/libassimp/include
+    )
+endif()
 
 # ==================================================================================================
 # Compiler flags
@@ -239,12 +330,21 @@ else()
     target_compile_options(${TARGET} PRIVATE -Wno-deprecated-register)
 endif()
 
-# Multi-configuration generators, like Visual Studio or Xcode, place executable binaries in a
-# sub-directory named after the configuration, like "Debug" or "Release".
-# For these generators, in order to find assets, we must "walk" up an additional directory.
-get_property(_isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-if (_isMultiConfig)
-    target_compile_definitions(${TARGET} PRIVATE RELATIVE_ASSET_PATH="..")
-else()
-    target_compile_definitions(${TARGET} PRIVATE RELATIVE_ASSET_PATH=".")
+if (FILAMENTAPP_HAS_ASSIMP)
+    target_compile_definitions(${TARGET} PRIVATE FILAMENTAPP_HAS_ASSIMP)
 endif()
+if (FILAMENTAPP_HAS_IMGUI)
+    target_compile_definitions(${TARGET} PRIVATE FILAMENTAPP_HAS_IMGUI)
+endif()
+if (FILAMENTAPP_HAS_SDL)
+    target_compile_definitions(${TARGET} PRIVATE FILAMENTAPP_HAS_SDL)
+endif()
+if (FILAMENTAPP_HAS_WEB_UI)
+    target_compile_definitions(${TARGET} PRIVATE FILAMENTAPP_HAS_WEB_UI)
+endif()
+
+
+# ==================================================================================================
+# Installation
+# ==================================================================================================
+install(TARGETS filamentapp filamentapp-resources ARCHIVE DESTINATION lib/${DIST_DIR} LIBRARY DESTINATION lib/${DIST_DIR})

@@ -175,7 +175,7 @@ public:
      * Takes a pointer to the contents of a GLB or a JSON-based glTF 2.0 file and returns an asset
      * with one instance, or null on failure.
      */
-    FilamentAsset* createAsset(const uint8_t* bytes, uint32_t nbytes);
+    FilamentAsset* createAsset(const uint8_t* bytes, uint32_t numBytes);
 
     /**
      * Consumes the contents of a glTF 2.0 file and produces a primary asset with one or more
@@ -234,6 +234,11 @@ public:
      * texture decoding or GPU uploading might be underway.
      */
     void destroyAsset(const FilamentAsset* asset);
+
+    /**
+     * @brief Performs a Garbage Collection sweep over all internal component managers.
+     */
+    void gc() noexcept;
 
     /**
      * Gets a weak reference to an array of cached materials, used internally to create material

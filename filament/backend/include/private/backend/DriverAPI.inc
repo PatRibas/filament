@@ -159,6 +159,8 @@ DECL_DRIVER_API_N(setFrameCompletedCallback,
         backend::CallbackHandler*, handler,
         utils::Invocable<void(void)>&&, callback)
 
+// Sets the time the next presented frame should be displayed at. Only valid if
+// isPresentationTimeSupported() returns true.
 DECL_DRIVER_API_N(setPresentationTime,
         int64_t, monotonic_clock_ns)
 
@@ -193,7 +195,7 @@ DECL_DRIVER_API_TAGGED_R_N(backend::VertexBufferHandle, createVertexBufferAsync,
         uint32_t, vertexCount,
         backend::VertexBufferInfoHandle, vbih,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_TAGGED_R_N(backend::IndexBufferHandle, createIndexBuffer,
@@ -206,7 +208,7 @@ DECL_DRIVER_API_TAGGED_R_N(backend::IndexBufferHandle, createIndexBufferAsync,
         uint32_t, indexCount,
         backend::BufferUsage, usage,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_TAGGED_R_N(backend::BufferObjectHandle, createBufferObject,
@@ -219,7 +221,7 @@ DECL_DRIVER_API_TAGGED_R_N(backend::BufferObjectHandle, createBufferObjectAsync,
         backend::BufferObjectBinding, bindingType,
         backend::BufferUsage, usage,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_TAGGED_R_N(backend::TextureHandle, createTexture,
@@ -242,7 +244,7 @@ DECL_DRIVER_API_TAGGED_R_N(backend::TextureHandle, createTextureAsync,
         uint32_t, depth,
         backend::TextureUsage, usage,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_TAGGED_R_N(backend::TextureHandle, createTextureView,
@@ -264,7 +266,7 @@ DECL_DRIVER_API_TAGGED_R_N(backend::TextureHandle, createTextureViewSwizzleAsync
         backend::TextureSwizzle, b,
         backend::TextureSwizzle, a,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_TAGGED_R_N(backend::TextureHandle, createTextureExternalImage2,
@@ -313,7 +315,7 @@ DECL_DRIVER_API_TAGGED_R_N(backend::TextureHandle, importTextureAsync,
         uint32_t, depth,
         backend::TextureUsage, usage,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_TAGGED_R_N(backend::RenderPrimitiveHandle, createRenderPrimitive,
@@ -434,6 +436,9 @@ DECL_DRIVER_API_SYNCHRONOUS_N(bool, isWorkaroundNeeded, backend::Workaround, wor
 DECL_DRIVER_API_SYNCHRONOUS_0(backend::FeatureLevel, getFeatureLevel)
 DECL_DRIVER_API_SYNCHRONOUS_0(size_t, getUniformBufferOffsetAlignment)
 DECL_DRIVER_API_SYNCHRONOUS_0(bool, isCompositorTimingSupported)
+// Whether setPresentationTime() is honored by this backend and platform. When this returns
+// false, setPresentationTime() is a no-op and must not be called.
+DECL_DRIVER_API_SYNCHRONOUS_0(bool, isPresentationTimeSupported)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, queryFrameTimestamps, backend::SwapChainHandle, swapChain, uint64_t, frameId, backend::FrameTimestamps*, outFrameTimestamps)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, queryCompositorTiming, backend::SwapChainHandle, swapChain, backend::CompositorTiming*, outCompositorTiming)
 
@@ -452,7 +457,7 @@ DECL_DRIVER_API_R_N(backend::AsyncCallId, setVertexBufferObjectAsync,
         uint32_t, index,
         backend::BufferObjectHandle, bufferObject,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_N(updateIndexBuffer,
@@ -465,7 +470,7 @@ DECL_DRIVER_API_R_N(backend::AsyncCallId, updateIndexBufferAsync,
         backend::BufferDescriptor&&, data,
         uint32_t, byteOffset,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_N(updateBufferObject,
@@ -478,7 +483,7 @@ DECL_DRIVER_API_R_N(backend::AsyncCallId, updateBufferObjectAsync,
         backend::BufferDescriptor&&, data,
         uint32_t, byteOffset,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_N(updateBufferObjectUnsynchronized,
@@ -511,7 +516,7 @@ DECL_DRIVER_API_R_N(backend::AsyncCallId, update3DImageAsync,
         uint32_t, depth,
         backend::PixelBufferDescriptor&&, data,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_N(generateMipmaps,
@@ -712,7 +717,7 @@ DECL_DRIVER_API_N(scissor,
 DECL_DRIVER_API_R_N(backend::AsyncCallId, queueCommandAsync,
         utils::Invocable<void(void)>&&, command,
         backend::CallbackHandler*, handler,
-        backend::CallbackHandler::Callback, callback,
+        backend::AsyncCallback, callback,
         void*, user)
 
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, cancelAsyncJob, backend::AsyncCallId, jobId)

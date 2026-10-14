@@ -52,6 +52,7 @@
 
 #include <math/vec3.h>
 
+#include <atomic>
 #include <string_view>
 
 #include <stddef.h>
@@ -125,10 +126,6 @@ public:
 
     BufferInterfaceBlock::FieldInfo const* reflect(std::string_view name) const noexcept;
 
-    FMaterialInstance const* getDefaultInstance() const noexcept {
-        return const_cast<FMaterial*>(this)->getDefaultInstance();
-    }
-
     FMaterialInstance* getDefaultInstance() noexcept;
 
     FEngine& getEngine() const noexcept  { return mEngine; }
@@ -141,11 +138,10 @@ public:
         if (!isSharedVariant(variant)) {
             return false;
         }
-        FMaterial const* const pDefaultMaterial = mEngine.getDefaultMaterial();
-        if (UTILS_UNLIKELY(!pDefaultMaterial)) {
+        FMaterialInstance const* const pDefaultInstance = mEngine.getDefaultMaterialInstance();
+        if (UTILS_UNLIKELY(!pDefaultInstance)) {
             return false;
         }
-        FMaterialInstance const* const pDefaultInstance = pDefaultMaterial->getDefaultInstance();
         pDefaultInstance->use(driver, variant);
         return true;
     }
@@ -176,6 +172,8 @@ public:
     }
     bool isDoubleSided() const noexcept { return mDefinition.doubleSided; }
     bool hasDoubleSidedCapability() const noexcept { return mDefinition.doubleSidedCapability; }
+    // true if the material was built with `instanced: true` (i.e. MATERIAL_HAS_INSTANCES)
+    bool isInstanced() const noexcept { return mDefinition.instanced; }
     bool isAlphaToCoverageEnabled() const noexcept { return mDefinition.rasterState.alphaToCoverage; }
     float getMaskThreshold() const noexcept { return mDefinition.maskThreshold; }
     bool hasShadowMultiplier() const noexcept { return mDefinition.hasShadowMultiplier; }
@@ -212,7 +210,9 @@ public:
     }
     size_t getParameters(ParameterInfo* parameters, size_t count) const noexcept;
 
-    uint32_t generateMaterialInstanceId() const noexcept { return mMaterialInstanceId++; }
+    uint32_t generateMaterialInstanceId() const noexcept {
+        return mMaterialInstanceId.fetch_add(1, std::memory_order_relaxed);
+    }
 
     LocalProgramCache& getPrograms() noexcept { return mPrograms; }
 
@@ -229,14 +229,11 @@ public:
     }
 
     inline bool isSharedVariant(Variant const variant) const {
-        // HACK: The default material "should" have MNT | DEP, but then we'd have to compile it as a
-        // lit material, which would increase binary size. Perhaps we could specially compile it
-        // with this variant, but with the shader program cache in active development, the days of
-        // the default material are numbered anyway.
-        constexpr Variant::type_t vsmAndDep = Variant::MNT | Variant::DEP;
-        return mDefinition.materialDomain == MaterialDomain::SURFACE && !mIsDefaultMaterial &&
-               !mDefinition.hasCustomDepthShader && Variant::isValidDepthVariant(variant) &&
-               (variant.key & vsmAndDep) != vsmAndDep;
+        // The default material explicitly filters VSM variants to reduce binary size, so it cannot
+        // provide the MNT | DEP variant as a shared program.
+        return !mIsDefaultMaterial && !mDefinition.hasCustomDepthShader &&
+               mDefinition.isValidDepthVariant(variant) &&
+               !mDefinition.isDepthMomentsVariant(variant);
     }
 
     MaterialParser const& getMaterialParser() const noexcept {
@@ -304,10 +301,8 @@ private:
     bool mUseUboBatching = false;
     bool mDepthPrecacheDisabled = false;
 
-    FMaterial const* mDefaultMaterial = nullptr;
-
     // reserve some space to construct the default material instance
-    mutable FMaterialInstance* mDefaultMaterialInstance = nullptr;
+    FMaterialInstance* mDefaultMaterialInstance = nullptr;
 
 #if FILAMENT_ENABLE_MATDBG
     matdbg::MaterialKey mDebuggerId;
@@ -323,7 +318,7 @@ private:
 
     FEngine& mEngine;
     const uint32_t mMaterialId;
-    mutable uint32_t mMaterialInstanceId = 0;
+    mutable std::atomic<uint32_t> mMaterialInstanceId = 0;
 
     LocalProgramCache mPrograms;
 };

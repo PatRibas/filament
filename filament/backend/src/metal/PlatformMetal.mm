@@ -23,13 +23,21 @@
 
 #import <Foundation/Foundation.h>
 
+#include <utils/Mutex.h>
+
 #include <atomic>
-#include <mutex>
+#include <new>
 
 namespace filament::backend {
 
 struct PlatformMetalImpl {
-    std::mutex mLock;   // locks mDevice and mCommandQueue
+    struct ExternalImageMetal final : public Platform::ExternalImage {
+        void* cvPixelBuffer = nullptr;
+    protected:
+        ~ExternalImageMetal() noexcept final;
+    };
+
+    utils::Mutex mLock;   // locks mDevice and mCommandQueue
     id<MTLDevice> mDevice = nil;
     id<MTLCommandQueue> mCommandQueue = nil;
 
@@ -41,6 +49,8 @@ struct PlatformMetalImpl {
     void createDeviceImpl(MetalDevice& outDevice);
     void createCommandQueueImpl(MetalDevice& device, MetalCommandQueue& outCommandQueue);
 };
+
+PlatformMetalImpl::ExternalImageMetal::~ExternalImageMetal() noexcept = default;
 
 Platform* createDefaultMetalPlatform() {
     return new PlatformMetal();
@@ -59,9 +69,26 @@ Driver* PlatformMetal::createDriver(void* /*sharedContext*/, const Platform::Dri
     return MetalDriverFactory::create(this, driverConfig);
 }
 
+Platform::ExternalImageHandle PlatformMetal::createExternalImage(void* cvPixelBuffer) noexcept {
+    if (!cvPixelBuffer) {
+        return {};
+    }
+    auto* p = new(std::nothrow) PlatformMetalImpl::ExternalImageMetal;
+    if (!p) {
+        return {};
+    }
+    p->cvPixelBuffer = cvPixelBuffer;
+    return ExternalImageHandle{ p };
+}
+
+void* PlatformMetal::getExternalImage(ExternalImageHandleRef externalImage) const noexcept {
+    auto const* const metalExternalImage =
+            static_cast<PlatformMetalImpl::ExternalImageMetal const*>(externalImage.get());
+    return metalExternalImage ? metalExternalImage->cvPixelBuffer : nullptr;
+}
 
 bool PlatformMetal::initialize() noexcept {
-    std::lock_guard<std::mutex> lock(pImpl->mLock);
+    utils::LockGuard const lock(pImpl->mLock);
 
     MetalDevice device{};
     pImpl->createDeviceImpl(device);
@@ -79,18 +106,18 @@ bool PlatformMetal::initialize() noexcept {
 }
 
 void PlatformMetal::createDevice(MetalDevice& outDevice) noexcept {
-    std::lock_guard<std::mutex> lock(pImpl->mLock);
+    utils::LockGuard const lock(pImpl->mLock);
     pImpl->createDeviceImpl(outDevice);
 }
 
 void PlatformMetal::createCommandQueue(
         MetalDevice& device, MetalCommandQueue& outCommandQueue) noexcept {
-    std::lock_guard<std::mutex> lock(pImpl->mLock);
+    utils::LockGuard const lock(pImpl->mLock);
     pImpl->createCommandQueueImpl(device, outCommandQueue);
 }
 
 void PlatformMetal::createAndEnqueueCommandBuffer(MetalCommandBuffer& outCommandBuffer) noexcept {
-    std::lock_guard<std::mutex> lock(pImpl->mLock);
+    utils::LockGuard const lock(pImpl->mLock);
     id<MTLCommandBuffer> commandBuffer = [pImpl->mCommandQueue commandBuffer];
     [commandBuffer enqueue];
     outCommandBuffer.commandBuffer = commandBuffer;

@@ -17,10 +17,14 @@
 #ifndef TNT_FILAMENT_BACKEND_WEBGPUSTAGEPOOL_H
 #define TNT_FILAMENT_BACKEND_WEBGPUSTAGEPOOL_H
 
+#include <utils/Mutex.h>
+
 #include <webgpu/webgpu_cpp.h>
 
 #include <map>
+#include <memory>
 #include <mutex>
+#include <vector>
 
 namespace filament::backend {
 
@@ -40,9 +44,14 @@ private:
     wgpu::Buffer createNewBuffer(size_t bufferSize);
     std::multimap<uint32_t, wgpu::Buffer> mBuffers;
     std::vector<std::pair<std::shared_ptr<WebGPUSubmissionState>, wgpu::Buffer>> mInProgress;
-    std::mutex mMutex;
+    utils::Mutex mMutex;
 
     wgpu::Device mDevice;
+
+    // MapAsync callbacks hold a weak reference to this token. Under Emscripten they are delivered
+    // spontaneously and can arrive after the pool is destroyed, in which case they must not
+    // touch it.
+    std::shared_ptr<bool> const mLifetimeToken{ std::make_shared<bool>(true) };
 };
 
 } // namespace filament::backend

@@ -140,32 +140,21 @@ utils::CString getPortString(std::string_view serviceType) {
 #endif // FILAMENT_ENABLE_FGVIEWER || FILAMENT_ENABLE_MATDBG
 
 Platform::DriverConfig getDriverConfig(FEngine* instance) {
-    Platform::DriverConfig const driverConfig {
+    Platform::DriverConfig const driverConfig{
         .featureFlagManager = instance,
+        .debugRegistry = &instance->getDebugRegistry().internalRegistry,
         .handleArenaSize = instance->getRequestedDriverHandleArenaSize(),
         .metalUploadBufferSizeBytes = instance->getConfig().metalUploadBufferSizeBytes,
-        .disableParallelShaderCompile = instance->features.backend.disable_parallel_shader_compile,
-        .disableAmortizedShaderCompile =
-                instance->features.backend.disable_amortized_shader_compile,
-        .disableHandleUseAfterFreeCheck =
-                instance->features.backend.disable_handle_use_after_free_check,
-        .disableHeapHandleTags = instance->features.backend.disable_heap_handle_tags,
         .forceGLES2Context = instance->getConfig().forceGLES2Context,
         .stereoscopicType = instance->getConfig().stereoscopicType,
         .stereoscopicEyeCount = instance->getConfig().stereoscopicEyeCount,
-        .assertNativeWindowIsValid =
-                instance->features.backend.opengl.assert_native_window_is_valid,
         .metalDisablePanicOnDrawableFailure =
                 instance->getConfig().metalDisablePanicOnDrawableFailure,
         .gpuContextPriority = instance->getConfig().gpuContextPriority,
-        .vulkanEnableAsyncPipelineCachePrewarming =
-                instance->features.backend.vulkan.enable_pipeline_cache_prewarming,
-        .vulkanEnableStagingBufferBypass =
-                instance->features.backend.vulkan.enable_staging_buffer_bypass,
-        .asynchronousMode = instance->features.backend.enable_asynchronous_operation ?
-                instance->getConfig().asynchronousMode : AsynchronousMode::NONE,
+        .asynchronousMode = instance->features.backend.enable_asynchronous_operation
+                                    ? instance->getConfig().asynchronousMode
+                                    : AsynchronousMode::NONE,
     };
-
     return driverConfig;
 }
 
@@ -293,7 +282,11 @@ static constexpr float4 sFullScreenTriangleVertices[3] = {
 // these must be static because only a pointer is copied to the render stream
 static constexpr uint16_t sFullScreenTriangleIndices[3] = { 0, 1, 2 };
 
-FEngine::FEngine(Builder const& builder) :
+FEngine::FEngine(Builder const& builder)
+        : FEngine(builder, builder->validateConfig(builder->mConfig)) {
+}
+
+FEngine::FEngine(Builder const& builder, Config const& validatedConfig) :
         mBackend(builder->mBackend),
         mActiveFeatureLevel(builder->mFeatureLevel),
         mPlatform(builder->mPlatform),
@@ -301,22 +294,23 @@ FEngine::FEngine(Builder const& builder) :
         mPostProcessManager(*this),
         mEntityManager(EntityManager::get()),
         mRenderableManager(*this),
+        mTransformManager(mEntityManager),
         mLightManager(*this),
         mCameraManager(*this),
-        mMaterialCache(builder->mConfig.materialCacheCapacity, builder->mConfig.programCacheCapacity),
+        mMaterialCache(validatedConfig.materialCacheCapacity, validatedConfig.programCacheCapacity),
         mCommandBufferQueue(
-                builder->mConfig.minCommandBufferSizeMB * MiB,
-                builder->mConfig.commandBufferSizeMB * MiB,
+                validatedConfig.minCommandBufferSizeMB * MiB,
+                validatedConfig.commandBufferSizeMB * MiB,
                 builder->mPaused),
         mPerRenderPassArena(
                 "FEngine::mPerRenderPassAllocator",
-                builder->mConfig.perRenderPassArenaSizeMB * MiB),
+                validatedConfig.perRenderPassArenaSizeMB * MiB + FRenderer::FRAMEGRAPH_ARENA_SIZE),
         mHeapAllocator("FEngine::mHeapAllocator", AreaPolicy::NullArea{}),
-        mJobSystem(getJobSystemThreadPoolSize(builder->mConfig)),
+        mJobSystem(getJobSystemThreadPoolSize(validatedConfig)),
         mEngineEpoch(std::chrono::steady_clock::now()),
         mDriverBarrier(1),
         mMainThreadId(ThreadUtils::getThreadId()),
-        mConfig(builder->mConfig),
+        mConfig(validatedConfig),
         mColorGradingBuilder(builder->mColorGradingBuilder)
 {
     // update all the features flags specified in the builder
@@ -353,6 +347,17 @@ FEngine::FEngine(Builder const& builder) :
 
     LOG(INFO) << "FEngine (" << sizeof(void*) * 8 << " bits) created at " << this << " "
               << "(threading is " << (UTILS_HAS_THREADING ? "enabled)" : "disabled)");
+
+    // Backend debug flags
+    // Must be registered before the driver thread starts.
+    mDebugRegistry.registerProperty("d.vulkan.debug_utils_names",
+            &debug.vulkan.enable_debug_utils_names);
+    mDebugRegistry.registerProperty("d.vulkan.renderdoc_capture",
+            &debug.vulkan.enable_renderdoc_capture);
+
+    // Renderer debug flags
+    mDebugRegistry.registerProperty("d.renderer.disable_set_presentation_time",
+            &debug.renderer.disable_set_presentation_time);
 }
 
 uint32_t FEngine::getJobSystemThreadPoolSize(Config const& config) noexcept {
@@ -506,7 +511,8 @@ void FEngine::init() {
 #endif
             break;
     }
-    mDefaultMaterial = downcast(defaultMaterialBuilder.build(*this));
+    FMaterial* const defaultMaterial = downcast(defaultMaterialBuilder.build(*this));
+    mDefaultMaterial = defaultMaterial;
 
     // We must commit the default material instance here. It may not be used in a scene, but its
     // descriptor set may still be used for shared variants.
@@ -514,17 +520,22 @@ void FEngine::init() {
     // Note that this material instance is instantiated before the creation of UboManager, so at
     // this point `isUboBatchingEnabled` is `false`, and it will fall back to individual UBO
     // automatically.
-    mDefaultMaterial->getDefaultInstance()->commit(driverApi, mUboManager);
+    mDefaultMaterialInstance = defaultMaterial->getDefaultInstance();
+    mDefaultMaterialInstance->commit(driverApi, mUboManager);
 
     if (UTILS_UNLIKELY(getSupportedFeatureLevel() >= FeatureLevel::FEATURE_LEVEL_1)) {
         // UBO batching is not supported in feature level 0
-        if (features.material.enable_material_instance_uniform_batching) {
+        bool uboBatching = features.material.enable_material_instance_uniform_batching &&
+                           !driverApi.isWorkaroundNeeded(
+                                   Workaround::DISABLE_MATERIAL_INSTANCE_UNIFORM_BATCHING);
+        if (uboBatching) {
             // Ubo size of each material instance is at least 16 bytes.
             constexpr BufferAllocator::allocation_size_t minSlotSize = 16;
             auto const uboOffsetAlignment = static_cast<BufferAllocator::allocation_size_t>(
                     driverApi.getUniformBufferOffsetAlignment());
             BufferAllocator::allocation_size_t slotSize = std::max(minSlotSize, uboOffsetAlignment);
-            mUboManager = new UboManager(getDriverApi(), slotSize, mConfig.sharedUboInitialSizeInBytes);
+            mUboManager =
+                    new UboManager(getDriverApi(), slotSize, mConfig.sharedUboInitialSizeInBytes);
         }
 
         mDefaultColorGrading = downcast(mColorGradingBuilder.build(*this));
@@ -651,6 +662,8 @@ void FEngine::shutdown() {
     destroy(mDefaultColorGrading);
     mDefaultColorGrading = nullptr;
 
+    // destroying the default material destroys its default instance
+    mDefaultMaterialInstance = nullptr;
     destroy(mDefaultMaterial);
     mDefaultMaterial = nullptr;
 
@@ -732,15 +745,18 @@ void FEngine::shutdown() {
         // Driver::terminate() has been called here.
     }
 
-    // Handle any pending deferred destruction for asynchronous objects.
+    // Call user callbacks that might have been scheduled. This is the last chance to run them, so
+    // it has to drain the ones that schedule other callbacks.
+    // These callbacks CANNOT call driver APIs.
+    getDriver().purgeAll();
+
+    // Handle any pending deferred destruction for asynchronous objects. This must run after
+    // purgeAll() because it dispatches the completion callback that settles `mCreationState`,
+    // which in turn is used to determine whether an object can be garbage collected below.
     if (isAsynchronousModeEnabled()) {
         gcDeferredAsyncObjectDestruction();
         assert_invariant(mDeferredAsyncObjectDestruction.empty());
     }
-
-    // Finally, call user callbacks that might have been scheduled.
-    // These callbacks CANNOT call driver APIs.
-    getDriver().purge();
 
     // and destroy the CommandStream
     std::destroy_at(std::launder(reinterpret_cast<DriverApi*>(&mDriverApiStorage)));
@@ -797,28 +813,26 @@ void FEngine::prepare(DriverApi& driver) {
 
 void FEngine::gc() {
     JobSystem& js = getJobSystem();
-    auto *rootJob = js.createJob();
-
-    js.run(
-            jobs::createJob(js, rootJob, [this] {
-                // These are safe to GC *sequentially* from a worker thread.
-                // The JobSystem acts as a release/acquire operation.
-                mLightManager.gc(mEntityManager);
-                mTransformManager.gc(mEntityManager);
-                mCameraManager.gc(*this, mEntityManager);
-            }));
+    JobSystem::Job* asyncJob = nullptr;
 
     if (isAsynchronousModeEnabled()) {
-        // gcDeferredAsyncObjectDestruction() is thread-safe in this context because
-        // 1. JobSystem provides the release/acquire operation
-        // 2. it's only used from the main thread, which we are blocking during the gc
-        js.run(jobs::createJob(js, rootJob, &FEngine::gcDeferredAsyncObjectDestruction, this));
+        asyncJob = js.createJob();
+        js.run(jobs::createJob(js, asyncJob, &FEngine::gcDeferredAsyncObjectDestruction, this));
     }
 
-    // RenderableManager cannot be gc'ed from a different thread, because it needs the DriverAPI
-    mRenderableManager.gc(mEntityManager, getDriverApi());
+    mLightManager.gc();
+    mTransformManager.gc();
+    mCameraManager.gc(*this);
+    mRenderableManager.gc(getDriverApi());
 
-    js.runAndWait(rootJob);
+    // Because the managers just updated their watermarks to the current epoch,
+    // advanceEpoch() will see the highest possible safe threshold, allowing
+    // it to reclaim the maximum amount of global IDs this frame.
+    mEntityManager.advanceEpoch();
+
+    if (asyncJob) {
+        js.runAndWait(asyncJob);
+    }
 }
 
 void FEngine::gcDeferredAsyncObjectDestruction() {
@@ -990,13 +1004,11 @@ void FEngine::flushCommandBuffer(CommandBufferQueue& commandBufferQueue) const {
     }
 }
 
-const FMaterial* FEngine::getSkyboxMaterial() const noexcept {
-    FMaterial const* material = mSkyboxMaterial;
-    if (UTILS_UNLIKELY(material == nullptr)) {
-        material = FSkybox::createMaterial(*const_cast<FEngine*>(this));
-        mSkyboxMaterial = material;
+const FMaterial* FEngine::getSkyboxMaterial() noexcept {
+    if (UTILS_UNLIKELY(mSkyboxMaterial == nullptr)) {
+        mSkyboxMaterial = FSkybox::createMaterial(*this);
     }
-    return material;
+    return mSkyboxMaterial;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1056,6 +1068,10 @@ FMaterial* FEngine::createMaterial(const Material::Builder& builder,
 
 FSkybox* FEngine::createSkybox(const Skybox::Builder& builder) noexcept {
     return create(mSkyboxes, builder);
+}
+
+FFramePacer* FEngine::createFramePacer(const FramePacer::Builder& builder) noexcept {
+    return create(mFramePacers, builder);
 }
 
 FColorGrading* FEngine::createColorGrading(const ColorGrading::Builder& builder) noexcept {
@@ -1177,8 +1193,13 @@ FCamera* FEngine::getCameraComponent(Entity const entity) noexcept {
     return ci ? mCameraManager.getCamera(ci) : nullptr;
 }
 
+FCamera const* FEngine::getCameraComponent(Entity const entity) const noexcept {
+    auto const ci = mCameraManager.getInstance(entity);
+    return ci ? mCameraManager.getCamera(ci) : nullptr;
+}
+
 void FEngine::destroyCameraComponent(Entity const entity) noexcept {
-    mCameraManager.destroy(*this, entity);
+    mCameraManager.destroy(entity, *this);
 }
 
 
@@ -1197,6 +1218,35 @@ void FEngine::createLight(const LightManager::Builder& builder, Entity const ent
 
 // -----------------------------------------------------------------------------------------------
 
+template<typename T, typename = void>
+struct HasIsCreationSettled : std::false_type {};
+
+template<typename T>
+struct HasIsCreationSettled<T, std::void_t<decltype(std::declval<T>().isCreationSettled())>>
+        : std::true_type {};
+
+template<typename T>
+void FEngine::destroyOrDeferFrontendObject(T* p) {
+    if constexpr (HasIsCreationSettled<T>::value) {
+        // The presence of 'isCreationSettled' in type T implies it supports asynchronous creation.
+        // While creation is in flight, the creation process holds references to the frontend object
+        // to move `mCreationState` out of CREATING (see FTexture::FTexture), so freeing it now
+        // would be a use-after-free on whichever thread runs the completion callback. In regular
+        // (non-async) mode `isCreationSettled` always returns true, so nothing is deferred.
+        if (!p->isCreationSettled()) {
+            mDeferredAsyncObjectDestruction.push_back([this, p]() {
+                if (!p->isCreationSettled()) {
+                    return false;
+                }
+                mHeapAllocator.destroy(p);
+                return true;
+            });
+            return;
+        }
+    }
+    mHeapAllocator.destroy(p);
+}
+
 template<typename T>
 UTILS_NOINLINE
 void FEngine::cleanupResourceList(ResourceList<T>&& list) {
@@ -1205,9 +1255,12 @@ void FEngine::cleanupResourceList(ResourceList<T>&& list) {
         DLOG(INFO) << "cleaning up " << list.size() << " leaked "
                    << CallStack::typeName<T>().c_str();
 #endif
-        list.forEach([this, &allocator = mHeapAllocator](T* item) {
+        list.forEach([this](T* item) {
             item->terminate(*this);
-            allocator.destroy(item);
+            // Leaked asynchronous objects can still be referenced by an in-flight creation, so
+            // this must defer just like terminateAndDestroy(). gcDeferredAsyncObjectDestruction()
+            // in shutdown() drains whatever is deferred here.
+            destroyOrDeferFrontendObject(item);
         });
         list.clear();
     }
@@ -1222,13 +1275,6 @@ bool FEngine::isValid(const T* ptr, ResourceList<T> const& list) const {
     auto& l = const_cast<ResourceList<T>&>(list);
     return l.find(ptr) != l.end();
 }
-
-template <typename T, typename = void>
-struct HasIsCreationComplete : std::false_type {};
-
-template <typename T>
-struct HasIsCreationComplete<T, std::void_t<decltype(std::declval<T>().isCreationComplete())>>
-        : std::true_type {};
 
 template<typename T>
 UTILS_ALWAYS_INLINE
@@ -1248,38 +1294,10 @@ bool FEngine::terminateAndDestroy(const T* ptr, ResourceList<T>& list) {
 
         T* p = const_cast<T*>(ptr);
 
-        if constexpr (HasIsCreationComplete<T>::value) {
-            // The presence of 'isCreationComplete' in type T implies it supports asynchronous
-            // creation. For these asynchronous objects, we can terminate the backend resources
-            // immediately as they are no longer referenced. However, we defer the destruction of
-            // the frontend object if it's still being loaded.
-            // Reason: The creation process is still active and holds a reference to the frontend
-            // object to set `mCreationComplete` to true (see FTexture::FTexture). Deleting it now
-            // may cause a crash, so we wait until creation completes.
-
-            // Terminate the backend resource immediately as they're unnecessary from this point.
-            p->terminate(*this);
-
-            if (p->isCreationComplete()) {
-                // If creation is complete, we free the frontend object immediately. Note that in
-                // regular (non-async) mode, the `isCreationComplete` method always return true.
-                mHeapAllocator.destroy(p);
-            } else {
-                // We defer the destruction of the frontend object until the creation process
-                // completes. This ensures the object remains valid while the creation process still
-                // holds references to it.
-                mDeferredAsyncObjectDestruction.push_back([this, p]() {
-                    if (!p->isCreationComplete()) {
-                        return false;
-                    }
-                    mHeapAllocator.destroy(p);
-                    return true;
-                });
-            }
-        } else {
-            p->terminate(*this);
-            mHeapAllocator.destroy(p);
-        }
+        // Terminate the backend resources immediately as they're unnecessary from this point. The
+        // frontend object itself may have to outlive this call, see destroyOrDeferFrontendObject().
+        p->terminate(*this);
+        destroyOrDeferFrontendObject(p);
     }
     return success;
 }
@@ -1326,6 +1344,11 @@ bool FEngine::destroy(const FScene* p) {
 UTILS_NOINLINE
 bool FEngine::destroy(const FSkybox* p) {
     return terminateAndDestroy(p, mSkyboxes);
+}
+
+UTILS_NOINLINE
+bool FEngine::destroy(const FFramePacer* p) {
+    return terminateAndDestroy(p, mFramePacers);
 }
 
 UTILS_NOINLINE
@@ -1450,7 +1473,7 @@ void FEngine::destroy(Entity const e) {
     mRenderableManager.destroy(e, getDriverApi());
     mLightManager.destroy(e);
     mTransformManager.destroy(e);
-    mCameraManager.destroy(*this, e);
+    mCameraManager.destroy(e, *this);
 }
 
 bool FEngine::isValid(const FBufferObject* p) const {
@@ -1578,9 +1601,9 @@ AsyncCallId FEngine::runCommandAsync(Invocable<void()>&& command,
     struct RunCommandAsyncCallback {
         AsyncCompletionCallback userCallback;
         void* userParam;
-        static void func(void* wrappedData) {
+        static void func(void* wrappedData, AsyncCallStatus const status) {
             auto const* const data = static_cast<RunCommandAsyncCallback*>(wrappedData);
-            data->userCallback(data->userParam);
+            data->userCallback(data->userParam, status);
             delete data;
         }
     };
@@ -1667,13 +1690,13 @@ void FEngine::setPaused(bool const paused) {
 }
 
 void FEngine::setFenceUnrecoverableError() noexcept {
-    std::lock_guard const lock(mFenceLock);
+    LockGuard const lock(mFenceLock);
     mFenceHasUnrecoverableError = true;
     mFenceCondition.notify_all();
 }
 
 void FEngine::signalFence(FenceSignal& signal, FenceSignal::State s) noexcept {
-    std::lock_guard const lock(mFenceLock);
+    LockGuard const lock(mFenceLock);
     signal.mState = s;
     mFenceCondition.notify_all();
 }
@@ -1794,9 +1817,8 @@ FixedCapacityVector<Variant> FEngine::getMaterialCompileVariants(
     // isMaterialLit means shading != Shading::UNLIT || hasShadowMultiplier;
     const bool isMaterialLit = material->getDefinition().isVariantLit;
     Variant baseVariant{};
-    baseVariant.setDirectionalLighting(isMaterialLit && view->hasDirectionalLighting());
-    // Dynamic lighting is now handled via specialization constants. The variant bit is always 0.
-    baseVariant.setDynamicLighting(false);
+    // TODO: Remove this after DIR is fully transferred to spec constant
+    baseVariant.setDirectionalLighting(false);
     baseVariant.setFog(view->hasFog());
     baseVariant.setShadowSampler2D(isMaterialLit && view->hasShadowing() && (view->getShadowType() != ShadowType::PCF));
     baseVariant.setStereo(view->hasStereo());
@@ -1842,6 +1864,8 @@ FixedCapacityVector<DynamicSpecConstKey> FEngine::getMaterialCompileDynamicSpecC
     DynamicSpecConstKey baseKey;
     const bool isMaterialLit = material->getDefinition().isVariantLit;
     baseKey.setDynamicLighting(isMaterialLit && view->hasDynamicLighting());
+    baseKey.setExtraDirectionalLights(isMaterialLit && view->hasExtraDirectionalLights());
+    baseKey.setDirectionalLighting(isMaterialLit && view->hasDirectionalLighting());
 
     keys.push_back(baseKey);
 
@@ -1929,7 +1953,6 @@ void Engine::Builder::build(Invocable<void(void*)>&& callback) const {
 #endif
 
 Engine* Engine::Builder::build() const {
-    mImpl->mConfig = BuilderDetails::validateConfig(mImpl->mConfig);
     return FEngine::create(*this);
 }
 

@@ -30,6 +30,7 @@
 #include <filament/BufferObject.h>
 #include <filament/Engine.h>
 #include <filament/IndexBuffer.h>
+#include <filament/MaterialEnums.h>
 #include <filament/MorphTargetBuffer.h>
 #include <filament/Texture.h>
 #include <filament/VertexBuffer.h>
@@ -292,7 +293,7 @@ inline void createSkins(cgltf_data const* gltf, bool normalize,
     }
 }
 
-static bool indexAccessorFitsBuffer(cgltf_accessor const* accessor, uint32_t bindingSize) {
+static bool indexAccessorFitsBuffer(cgltf_accessor const* accessor, size_t bindingSize) {
     if (!accessor->buffer_view) {
         return false;
     }
@@ -379,29 +380,25 @@ inline bool uploadBuffers(FFilamentAsset* asset, Engine& engine,
                 }
 
                 if (slot.indexBuffer) {
-                    if (accessor->component_type == cgltf_component_type_r_8u) {
-                        // glTF 8-bit indices are 1 byte, but Filament IndexBuffer requires at least
-                        // 16-bit indices. We allocate 2 bytes per index to match the expansion
-                        // performed in the conversion path below.
-                        const size_t size16 = count * sizeof(uint16_t);
-                        void* zeros = malloc(size16);
-                        if (!zeros) {
-                            LOG(ERROR) << "Out of memory allocating zeroed index buffer.";
-                            continue;
-                        }
-                        memset(zeros, 0, size16);
-                        IndexBuffer::BufferDescriptor bd(zeros, size16, FREE_CALLBACK);
-                        slot.indexBuffer->setBuffer(engine, std::move(bd));
-                    } else {
-                        void* zeros = malloc(size);
-                        if (!zeros) {
-                            LOG(ERROR) << "Out of memory allocating zeroed index buffer.";
-                            continue;
-                        }
-                        memset(zeros, 0, size);
-                        IndexBuffer::BufferDescriptor bd(zeros, size, FREE_CALLBACK);
-                        slot.indexBuffer->setBuffer(engine, std::move(bd));
+                    // Size the zeroed blob from the destination. The IndexBuffer holds
+                    // (indexCount * elementSize) bytes, where glTF 8-bit indices are promoted to
+                    // 16-bit because Filament has no 8-bit index type. The accessor's declared
+                    // type has no say in this, which is what keeps the blob within capacity.
+                    size_t const indexCount = slot.indexBuffer->getIndexCount();
+                    size_t const componentSize = cgltf_component_size(accessor->component_type);
+                    size_t const indexSize =
+                            componentSize == 1 ? sizeof(uint16_t) : componentSize;
+                    if (indexCount == 0 || indexSize == 0) {
+                        continue;
                     }
+                    void* zeros = calloc(indexCount, indexSize);
+                    if (!zeros) {
+                        LOG(ERROR) << "Out of memory allocating zeroed index buffer.";
+                        continue;
+                    }
+                    IndexBuffer::BufferDescriptor bd(zeros, indexCount * indexSize,
+                            FREE_CALLBACK);
+                    slot.indexBuffer->setBuffer(engine, std::move(bd));
                     continue;
                 }
             }
@@ -417,12 +414,12 @@ inline bool uploadBuffers(FFilamentAsset* asset, Engine& engine,
             if (floatsCount == 0) {
                 continue;
             }
-            
+
             if (floatsCount > std::numeric_limits<size_t>::max() / sizeof(float)) {
                 continue;
             }
             const size_t floatsByteCount = sizeof(float) * floatsCount;
-            
+
             float* floatsData = (float*)malloc(floatsByteCount);
             if (!floatsData) {
                 LOG(WARNING) << "Failed to allocate memory for morph target unpacking, skipping.";
@@ -504,12 +501,12 @@ inline bool uploadBuffers(FFilamentAsset* asset, Engine& engine,
                 if (floatsCount == 0) {
                     continue;
                 }
-                
+
                 if (floatsCount > std::numeric_limits<size_t>::max() / sizeof(float)) {
                     continue;
                 }
                 const size_t floatsByteCount = sizeof(float) * floatsCount;
-                
+
                 float* floatsData = (float*) malloc(floatsByteCount);
                 if (!floatsData) {
                     LOG(WARNING) << "Failed to allocate memory for vertex buffer conversion, skipping.";
@@ -541,29 +538,44 @@ inline bool uploadBuffers(FFilamentAsset* asset, Engine& engine,
                 continue;
             }
 
-            if (!indexAccessorFitsBuffer(accessor, size)) {
+            // Redundant with AssetLoader and with cgltf_validate(): Draco and meshopt decoding
+            // replace the bufferView but never accessor->stride, which cgltf computes at parse
+            // time. Kept as the last check before the bytes reach the driver.
+            if (!utility::isUploadableIndexAccessor(accessor)) {
+                LOG(ERROR) << "Malformed index accessor: indices must be scalar, tightly packed "
+                              "and non-sparse.";
+                return false;
+            }
+
+            // Size the copy from the destination. The IndexBuffer was allocated as
+            // (indexCount * componentSize), with 8-bit indices widened to 16-bit, so that is
+            // exactly how many bytes may be written and, given the check above, exactly how many
+            // source bytes the accessor describes.
+            size_t const indexCount = slot.indexBuffer->getIndexCount();
+            size_t const componentSize = cgltf_component_size(accessor->component_type);
+            size_t const srcByteCount = indexCount * componentSize;
+
+            if (!indexAccessorFitsBuffer(accessor, srcByteCount)) {
                 LOG(ERROR) << "Index accessor size exceeds buffer capacity.";
                 return false;
             }
 
             if (accessor->component_type == cgltf_component_type_r_8u) {
-                if (size_t(size) > std::numeric_limits<size_t>::max() / 2) {
-                    LOG(WARNING) << "Index buffer size would overflow on conversion, skipping.";
-                    continue;
-                }
-                const size_t size16 = size_t(size) * 2;
-                uint16_t* data16 = (uint16_t*) malloc(size16);
+                // glTF 8-bit indices are 1 byte, but Filament has no 8-bit index type, so the
+                // IndexBuffer holds two bytes per index.
+                size_t const dstByteCount = srcByteCount * 2;
+                uint16_t* data16 = (uint16_t*) malloc(dstByteCount);
                 if (!data16) {
                     LOG(WARNING) << "Failed to allocate memory for index buffer conversion, skipping.";
                     continue;
                 }
-                utility::convertBytesToShorts(data16, data, size);
-                IndexBuffer::BufferDescriptor bd(data16, size16, FREE_CALLBACK);
+                utility::convertBytesToShorts(data16, data, srcByteCount);
+                IndexBuffer::BufferDescriptor bd(data16, dstByteCount, FREE_CALLBACK);
 
                 slot.indexBuffer->setBuffer(engine, std::move(bd));
                 continue;
             }
-            IndexBuffer::BufferDescriptor bd(data, size, uploadCallback,
+            IndexBuffer::BufferDescriptor bd(data, srcByteCount, uploadCallback,
                     uploadUserdata(asset, uriDataCache));
             slot.indexBuffer->setBuffer(engine, std::move(bd));
             continue;
@@ -583,20 +595,20 @@ inline bool uploadBuffers(FFilamentAsset* asset, Engine& engine,
                 capacity = accessor->buffer_view->buffer->size;
                 totalOffset = accessor->buffer_view->offset + accessor->offset;
             }
-            
+
             if (capacity == 0 || totalOffset >= capacity) {
                 continue;
             }
-            
+
             const cgltf_size availableBytes = capacity - totalOffset;
             const cgltf_size stride = accessor->stride;
             const cgltf_size elementSize = cgltf_calc_size(accessor->type, accessor->component_type);
-            
+
             cgltf_size maxCount = 0;
             if (stride > 0 && availableBytes >= elementSize) {
                 maxCount = 1 + (availableBytes - elementSize) / stride;
             }
-            
+
             cgltf_size safeCount = accessor->count;
             if (safeCount > maxCount) {
                 LOG(WARNING) << "Accessor count exceeds buffer capacity, clamping.";
@@ -611,7 +623,7 @@ inline bool uploadBuffers(FFilamentAsset* asset, Engine& engine,
             if (floatsCount == 0) {
                 continue;
             }
-            
+
             if (floatsCount > std::numeric_limits<size_t>::max() / sizeof(float)) {
                 continue;
             }
@@ -944,9 +956,8 @@ std::pair<Texture*, CacheResult> ResourceLoader::Impl::getOrCreateTexture(FFilam
 
     // Finally, try the file system.
     else if constexpr (GLTFIO_USE_FILESYSTEM) {
-        utils::slog.w << "gltfio: Auto-loading resources from the filesystem is deprecated. "
-                      << "Please manually load bytes and use ResourceLoader::addResourceData."
-                      << utils::io::endl;
+        LOG(WARNING) << "gltfio: Auto-loading resources from the filesystem is deprecated. "
+                     << "Please manually load bytes and use ResourceLoader::addResourceData.";
         if (auto iter = mFilepathTextureCache[cacheIdx].find(uri);
                 iter != mFilepathTextureCache[cacheIdx].end()) {
             return {iter->second, CacheResult::FOUND};
@@ -1067,8 +1078,12 @@ void ResourceLoader::Impl::computeTangents(FFilamentAsset* asset) {
         for (cgltf_size pindex = 0, pcount = mesh.primitives_count; pindex < pcount; ++pindex) {
             const cgltf_primitive& prim = mesh.primitives[pindex];
             MorphTargetBuffer* const tb = prims[pindex].morphTargetBuffer;
+            if (!tb) {
+                continue;
+            }
             uint32_t const morphTargetOffset = prims[pindex].morphTargetOffset;
-            for (cgltf_size tindex = 0, tcount = prim.targets_count; tindex < tcount; ++tindex) {
+            const cgltf_size tcount = std::min(prim.targets_count, (cgltf_size) MAX_MORPH_TARGETS);
+            for (cgltf_size tindex = 0; tindex < tcount; ++tindex) {
                 const cgltf_morph_target& target = prim.targets[tindex];
                 bool hasNormals = false;
                 for (cgltf_size aindex = 0; aindex < target.attributes_count; aindex++) {
@@ -1091,14 +1106,24 @@ void ResourceLoader::Impl::computeTangents(FFilamentAsset* asset) {
         }
     }
 
-    // Kick off jobs for computing tangent frames.
+    // Kick off jobs for computing tangent frames in batches to avoid exhausting the job pool.
     JobSystem* js = &mEngine->getJobSystem();
-    JobSystem::Job* parent = js->createJob();
-    for (Params& params : jobParams) {
-        Params* pptr = &params;
-        js->run(jobs::createJob(*js, parent, [pptr] { TangentsJob::run(pptr); }));
+    constexpr size_t MAX_BATCH_SIZE = JobSystem::MAX_JOB_COUNT / 2;
+    for (size_t offset = 0; offset < jobParams.size(); offset += MAX_BATCH_SIZE) {
+        const size_t batchSize = std::min(jobParams.size() - offset, MAX_BATCH_SIZE);
+        JobSystem::Job* parent = js->createJob();
+        for (size_t j = 0; j < batchSize; ++j) {
+            Params* pptr = &jobParams[offset + j];
+            JobSystem::Job* job = parent ?
+                    jobs::createJob(*js, parent, [pptr] { TangentsJob::run(pptr); }) : nullptr;
+            if (UTILS_LIKELY(job)) {
+                js->run(job);
+            } else {
+                TangentsJob::run(pptr);
+            }
+        }
+        js->runAndWait(parent);
     }
-    js->runAndWait(parent);
 
     // Finally, upload quaternions to the GPU from the main thread.
     for (Params& params : jobParams) {

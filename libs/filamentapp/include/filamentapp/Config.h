@@ -25,25 +25,31 @@
 
 #include <string>
 
-struct Config {
-    std::string title;
-    std::string iblDirectory;
-    std::string dirt;
+struct [[deprecated("Use FilamentApp2::Builder methods instead. Deadline: 2027/07/20")]] Config {
+    utils::CString title;
+    uint32_t width = 1024;
+    uint32_t height = 640;
+    utils::CString iblDirectory;
+    utils::CString dirt;
     float scale = 1.0f;
     bool splitView = false;
     mutable filament::Engine::Backend backend = filament::Engine::Backend::DEFAULT;
-    mutable filament::backend::FeatureLevel featureLevel = filament::backend::FeatureLevel::FEATURE_LEVEL_3;
+    mutable filament::backend::FeatureLevel featureLevel =
+            filament::backend::FeatureLevel::FEATURE_LEVEL_3;
     filament::camutils::Mode cameraMode = filament::camutils::Mode::ORBIT;
     filament::math::float3 cameraTarget = { 0.0f, 0.0f, -4.0f };
     filament::math::float3 cameraPosition = { 0.0f, 0.0f, 1.0f };
     float zoomSpeed = 0.2f;
     bool resizeable = true;
+    // Deprecated: headless is a property of the DisplayManager. Prefer the FilamentApp2 API and
+    // pass a filament::app::HeadlessDisplayManager to Builder::displayManager(). FilamentApp::run()
+    // honors this flag by constructing one on the caller's behalf.
     bool headless = false;
     int stereoscopicEyeCount = 2;
     uint8_t samples = 1;
 
     // Indicate GPU preference for vulkan
-    std::string vulkanGPUHint;
+    utils::CString vulkanGPUHint;
 
 
     // Note that WebGPU has its own enums for backends, but to avoid leaking webgpu headers to
@@ -56,7 +62,8 @@ struct Config {
     DisplayManager displayManager = DisplayManager::SDL;
 
     // Asynchronous mode for Engine
-    filament::backend::AsynchronousMode asynchronousMode = filament::backend::AsynchronousMode::NONE;
+    filament::backend::AsynchronousMode asynchronousMode =
+            filament::backend::AsynchronousMode::NONE;
 };
 
 #endif // TNT_FILAMENT_SAMPLE_CONFIG_H

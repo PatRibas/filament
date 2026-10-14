@@ -27,6 +27,7 @@
 #include <utils/compiler.h>
 #include <utils/EntityInstance.h>
 #include <utils/FixedCapacityVector.h>
+#include <utils/Slice.h>
 
 #include <math/mathfwd.h>
 #include <math/vec3.h>
@@ -80,10 +81,15 @@ class FRenderableManager;
  * scene->addEntity(renderable);
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
- * To modify the state of an existing renderable, clients should first use RenderableManager
- * to get a temporary handle called an \em instance. The instance can then be used to get or set
- * the renderable's state. Please note that instances are ephemeral; clients should store entities,
- * not instances.
+ * Instance lifetime
+ * =================
+ *
+ * An Instance is a transient handle: Instances are not stable when a component is added,
+ * removed or gc() is called on a component manager.
+ *
+ * Instances must therefore not be kept across frames. Keep the Entity instead, and call
+ * getInstance() again when needed; it is a fast lookup. Using a stale Instance doesn't crash
+ * but silently accesses the wrong component.
  *
  * - For details about constructing renderables, see RenderableManager::Builder.
  * - To associate a 4x4 transform with an entity, see TransformManager.
@@ -93,6 +99,11 @@ class UTILS_PUBLIC RenderableManager : public FilamentAPI {
     struct BuilderDetails;
 
 public:
+    /**
+     * An Instance representing a renderable component.
+     * Instances are not stable when a component is added, removed or gc() is called on a
+     * component manager.
+     */
     using Instance = utils::EntityInstance<RenderableManager>;
     using PrimitiveType = backend::PrimitiveType;
 
@@ -102,9 +113,15 @@ public:
     bool hasComponent(utils::Entity e) const noexcept;
 
     /**
-     * Gets a temporary handle that can be used to access the renderable state.
+     * Gets an Instance representing the renderable component associated with the given Entity.
      *
+     * @param e An Entity.
      * @return Non-zero handle if the entity has a renderable component, 0 otherwise.
+     * @note Use Instance::isValid() to make sure the component exists.
+     * @note The returned Instance is transient and must not be kept across frames, see
+     *       "Instance lifetime" above. Instances are not stable when a component is added,
+     *       removed or gc() is called on a component manager.
+     * @see hasComponent()
      */
     Instance getInstance(utils::Entity e) const noexcept;
 
@@ -129,6 +146,15 @@ public:
      * Retrieve the Entities of all the components of this manager.
      * @return A list, in no particular order, of all the entities managed by this manager.
      */
+    utils::Slice<const utils::Entity> getAllEntities() const noexcept;
+
+    /**
+     * Retrieve the Entities of all the components of this manager.
+     * @return A list, in no particular order, of all the entities managed by this manager.
+     * @deprecated Use getAllEntities() instead.
+     */
+    UTILS_DEPRECATED
+    UTILS_NOAPIGEN
     utils::Entity const* UTILS_NONNULL getEntities() const noexcept;
 
     /**
@@ -136,7 +162,7 @@ public:
      *
      * Clients can specify bones either using this quat-vec3 pair, or by using 4x4 matrices.
      */
-    struct Bone {
+    struct UTILS_NOAPIGEN Bone {
         math::quatf unitQuaternion = { 1.f, 0.f, 0.f, 0.f };
         math::float3 translation = { 0.f, 0.f, 0.f };
         float reserved = 0;
@@ -450,9 +476,19 @@ public:
          * @param boneCount 0 to disable, otherwise the number of bone transforms (up to 255)
          * @param transforms the initial set of transforms (one for each bone)
          */
-        Builder& skinning(size_t boneCount, math::mat4f const* UTILS_NONNULL transforms) noexcept;
-        Builder& skinning(size_t boneCount, Bone const* UTILS_NONNULL bones) noexcept; //!< \overload
+        UTILS_APIGEN_ALTERNATE_NAME(skinningAsMatrices)
+        Builder& skinning(utils::Slice<const math::mat4f> transforms) noexcept;
+        Builder& skinning(utils::Slice<const Bone> bones) noexcept; //!< \overload
         Builder& skinning(size_t boneCount) noexcept; //!< \overload
+
+        UTILS_NOAPIGEN
+        inline Builder& skinning(size_t boneCount, math::mat4f const* UTILS_NONNULL transforms) noexcept {
+            return skinning({ transforms, boneCount });
+        }
+        UTILS_NOAPIGEN
+        inline Builder& skinning(size_t boneCount, Bone const* UTILS_NONNULL bones) noexcept {
+            return skinning({ bones, boneCount });
+        }
 
         /**
          * Define bone indices and weights "pairs" for vertex skinning as a float2.
@@ -504,6 +540,7 @@ public:
          *
          * @see VertexBuffer:Builder:advancedSkinning
          */
+        UTILS_NOAPIGEN
         Builder& boneIndicesAndWeights(size_t primitiveIndex,
                 utils::FixedCapacityVector<
                     utils::FixedCapacityVector<math::float2>> indicesAndWeightsVector) noexcept;
@@ -554,13 +591,13 @@ public:
          * precedence.
          *
          * @param primitiveIndex the primitive of interest
-         * @param order draw order number (0 by default). Only the lowest 15 bits are used.
+         * @param blendOrder draw order number (0 by default). Only the lowest 15 bits are used.
          *
          * @return Builder reference for chaining calls.
          *
          * @see globalBlendOrderEnabled
          */
-        Builder& blendOrder(size_t primitiveIndex, uint16_t order) noexcept;
+        Builder& blendOrder(size_t primitiveIndex, uint16_t blendOrder) noexcept;
 
         /**
          * Sets whether the blend order is global or local to this Renderable (by default).
@@ -634,7 +671,7 @@ public:
          *            memory or other resources.
          * @exception utils::PreConditionPanic if a parameter to a builder function was invalid.
          */
-        Result build(Engine& engine, utils::Entity entity);
+        Result build(Engine& engine, utils::Entity entity) const;
 
     private:
         friend class FEngine;
@@ -797,14 +834,27 @@ public:
     bool isScreenSpaceContactShadowsEnabled(Instance instance) const noexcept;
 
     /**
-     * Updates the bone transforms in the range [offset, offset + boneCount).
+     * Updates the bone transforms in the range [offset, offset + transforms.size()).
      * The bones must be pre-allocated using Builder::skinning().
      */
-    void setBones(Instance instance, Bone const* UTILS_NONNULL transforms,
-            size_t boneCount = 1, size_t offset = 0);
+    UTILS_APIGEN_ALTERNATE_NAME(setBonesAsQuaternions)
+    void setBones(Instance instance, utils::Slice<const Bone> transforms, size_t offset = 0);
 
-    void setBones(Instance instance, math::mat4f const* UTILS_NONNULL transforms,
-            size_t boneCount = 1, size_t offset = 0); //!< \overload
+    UTILS_NOAPIGEN
+    inline void setBones(Instance instance, Bone const* UTILS_NONNULL transforms,
+            size_t boneCount = 1, size_t offset = 0) {
+        setBones(instance, { transforms, boneCount }, offset);
+    }
+
+    UTILS_APIGEN_ALTERNATE_NAME(setBonesAsMatrices)
+    void setBones(Instance instance, utils::Slice<const math::mat4f> transforms,
+            size_t offset = 0); //!< \overload
+
+    UTILS_NOAPIGEN
+    inline void setBones(Instance instance, math::mat4f const* UTILS_NONNULL transforms,
+            size_t boneCount = 1, size_t offset = 0) {
+        setBones(instance, { transforms, boneCount }, offset);
+    }
 
     /**
      * Associates a region of a SkinningBuffer to a renderable instance
@@ -827,12 +877,16 @@ public:
      * morphing mode, only the first 4 weights are considered.
      *
      * @param instance Instance of the component obtained from getInstance().
-     * @param weights Pointer to morph target weights to be update.
-     * @param count Number of morph target weights.
+     * @param weights Morph target weights to be updated.
      * @param offset Index of the first morph target weight to set at instance.
      */
-    void setMorphWeights(Instance instance,
-            float const* UTILS_NONNULL weights, size_t count, size_t offset = 0);
+    void setMorphWeights(Instance instance, utils::Slice<const float> weights, size_t offset = 0);
+
+    UTILS_NOAPIGEN
+    inline void setMorphWeights(Instance instance, float const* UTILS_NONNULL weights,
+            size_t count, size_t offset = 0) {
+        setMorphWeights(instance, { weights, count }, offset);
+    }
 
     /**
      * Associates a MorphTargetBuffer to the given primitive.
@@ -866,6 +920,36 @@ public:
     size_t getInstanceCount(Instance instance) const noexcept;
 
     /**
+     * Changes the number of draw instances of this renderable.
+     *
+     * For renderables using manual instancing (i.e. built with Builder::instances(size_t)),
+     * the instance count is silently clamped between 0 and 32767.
+     *
+     * For renderables built with an InstanceBuffer
+     * (i.e. Builder::instances(size_t, InstanceBuffer*)), the instance count must be less
+     * than or equal to both the InstanceBuffer's instance count and
+     * Engine::getMaxAutomaticInstances().
+     *
+     * An instance count of 0 means the renderable is not drawn in any pass (including shadow
+     * passes), but its component is otherwise left untouched. This allows, for instance, to
+     * allocate resources for a maximum number of instances up front and only draw the ones
+     * currently needed.
+     *
+     * All instances are culled using the same bounding box, so care must be taken to make
+     * sure all instances render inside the renderable's bounding box.
+     *
+     * @param instance Instance of the component obtained from getInstance().
+     * @param instanceCount The new number of instances.
+     *
+     * @exception utils::PreConditionPanic if the renderable uses an InstanceBuffer and
+     *                                     instanceCount exceeds its capacity.
+     *
+     * @see Builder::instances()
+     * @see getInstanceCount()
+     */
+    void setInstanceCount(Instance instance, size_t instanceCount);
+
+    /**
      * Changes the material instance binding for the given primitive.
      *
      * The MaterialInstance's material must have a feature level equal or lower to the engine's
@@ -896,21 +980,76 @@ public:
     /**
      * Changes the geometry for the given primitive.
      *
-     * \see Builder::geometry()
-     */
-    void setGeometryAt(Instance instance, size_t primitiveIndex, PrimitiveType type,
-            VertexBuffer* UTILS_NONNULL vertices,
-            IndexBuffer* UTILS_NONNULL indices,
-            size_t offset, size_t count) noexcept;
-
-    /**
-     * Changes the geometry for the given primitive. (non-indexed version)
+     * @param instance Renderable's instance
+     * @param primitiveIndex Primitive index
+     * @param type Specifies the topology of the primitive
+     * @param vertices Specifies the vertex buffer
+     * @param indices Specifies the index buffer
+     *
+     * @exception utils::PreConditionPanic if a buffer's creation is still in progress or was
+     *                                     canceled.
      *
      * \see Builder::geometry()
      */
     void setGeometryAt(Instance instance, size_t primitiveIndex, PrimitiveType type,
             VertexBuffer* UTILS_NONNULL vertices,
-            size_t offset, size_t count) noexcept;
+            IndexBuffer* UTILS_NONNULL indices);
+
+    /**
+     * Changes the geometry for the given primitive.
+     *
+     * @param instance Renderable's instance
+     * @param primitiveIndex Primitive index
+     * @param type Specifies the topology of the primitive
+     * @param vertices Specifies the vertex buffer
+     * @param indices Specifies the index buffer
+     * @param offset Specifies where in the index buffer to start reading (expressed as a number of indices)
+     * @param count Number of indices to read
+     *
+     * @exception utils::PreConditionPanic if the buffer's creation is still in progress or was
+     *                                     canceled.
+     *
+     * \see Builder::geometry()
+     */
+    void setGeometryAt(Instance instance, size_t primitiveIndex, PrimitiveType type,
+            VertexBuffer* UTILS_NONNULL vertices,
+            IndexBuffer* UTILS_NONNULL indices,
+            size_t offset, size_t count); //!< \overload
+
+    /**
+     * Changes the geometry for the given primitive. (non-indexed version)
+     *
+     * @param instance Renderable's instance
+     * @param primitiveIndex Primitive index
+     * @param type Specifies the topology of the primitive
+     * @param vertices Specifies the vertex buffer
+     *
+     * @exception utils::PreConditionPanic if the buffer's creation is still in progress or was
+     *                                     canceled.
+     *
+     * \see Builder::geometry()
+     */
+    void setGeometryAt(Instance instance, size_t primitiveIndex, PrimitiveType type,
+            VertexBuffer* UTILS_NONNULL vertices);
+
+    /**
+     * Changes the geometry for the given primitive. (non-indexed version)
+     *
+     * @param instance Renderable's instance
+     * @param primitiveIndex Primitive index
+     * @param type Specifies the topology of the primitive
+     * @param vertices Specifies the vertex buffer
+     * @param offset Specifies where in the vertex buffer to start reading (expressed as a number of vertices)
+     * @param count Number of vertices to read
+     *
+     * @exception utils::PreConditionPanic if the buffer's creation is still in progress or was
+     *                                     canceled.
+     *
+     * \see Builder::geometry()
+     */
+    void setGeometryAt(Instance instance, size_t primitiveIndex, PrimitiveType type,
+            VertexBuffer* UTILS_NONNULL vertices,
+            size_t offset, size_t count); //!< \overload
 
     /**
      * Changes the drawing order for blended primitives. The drawing order is either global or
@@ -990,6 +1129,7 @@ public:
     template<typename VECTOR, typename INDEX,
             typename = typename is_supported_vector_type<VECTOR>::type,
             typename = typename is_supported_index_type<INDEX>::type>
+    UTILS_NOAPIGEN
     static Box computeAABB(
             VECTOR const* UTILS_NONNULL vertices,
             INDEX const* UTILS_NONNULL indices, size_t count,

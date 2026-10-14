@@ -152,7 +152,7 @@ public:
          *
          * @return pointer to the newly created object.
          */
-        Skybox* UTILS_NONNULL build(Engine& engine);
+        Skybox* UTILS_NONNULL build(Engine& engine) const;
 
     private:
         friend class FSkybox;
@@ -188,7 +188,7 @@ public:
     /**
      * @return the associated texture
      */
-    Texture const* UTILS_NONNULL getTexture() const noexcept;
+    Texture const* UTILS_NULLABLE getTexture() const noexcept;
 
 protected:
     // prevent heap allocation

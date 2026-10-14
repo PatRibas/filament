@@ -194,12 +194,11 @@ void WebGPUPipelineCache::populateKey(RenderPipelineRequest const& request,
         outKey.colorFormats[colorIndex] = request.colorFormats[colorIndex];
     }
     // vertex buffers...
-    for (WebGPUVertexBufferInfo::WebGPUSlotBindingInfo const& vertexBufferSlot:
-            request.vertexBufferSlots) {
-        assert_invariant(vertexBufferSlot.sourceBufferIndex < MAX_VERTEX_BUFFER_COUNT);
-        outKey.vertexBuffers[vertexBufferSlot.sourceBufferIndex].stride = vertexBufferSlot.stride;
-        outKey.vertexBuffers[vertexBufferSlot.sourceBufferIndex].offset =
-                vertexBufferSlot.bufferOffset;
+    assert_invariant(request.vertexBufferSlots.size() <= MAX_VERTEX_BUFFER_COUNT);
+    for (size_t slotIndex{ 0 }; slotIndex < request.vertexBufferSlots.size(); slotIndex++) {
+        outKey.vertexBuffers[slotIndex].stride =
+                static_cast<uint32_t>(request.vertexBufferLayouts[slotIndex].arrayStride);
+        outKey.vertexBuffers[slotIndex].offset = request.vertexBufferSlots[slotIndex].bufferOffset;
     }
     // vertex attributes...
     uint8_t currentAttributeIndex{ 0 };
@@ -215,7 +214,7 @@ void WebGPUPipelineCache::populateKey(RenderPipelineRequest const& request,
             };
             outKey.vertexAttributes[currentAttributeIndex].bufferIndex = bufferIndex;
             outKey.vertexAttributes[currentAttributeIndex].offset =
-                    static_cast<uint8_t>(vertexAttribute.offset);
+                    static_cast<uint16_t>(vertexAttribute.offset);
             outKey.vertexAttributes[currentAttributeIndex].shaderLocation =
                     static_cast<uint8_t>(vertexAttribute.shaderLocation);
             outKey.vertexAttributes[currentAttributeIndex].format = vertexAttribute.format;
@@ -293,10 +292,10 @@ wgpu::RenderPipeline WebGPUPipelineCache::createRenderPipeline(
             //    where certain constants may be optimized out of the shader based
             //    on build configuration, etc.
             //
-            // to bypass these problems, we do not use override constants in the
-            // WebGPU backend, instead replacing placeholder constants in the shader
-            // text before creating the shader module (essentially implementing
-            // override constants ourselves)
+            // To bypass the first limitation, filamat emits constants that determine buffer
+            // layouts as ordinary shader constants. To bypass the second, WebGPUProgram applies
+            // the remaining Program specialization constants to WGSL override defaults before
+            // creating the shader module. Therefore, no constants are passed to the pipeline.
             .constantCount = 0,
             .constants = nullptr,
             .bufferCount = request.vertexBufferSlots.size(),

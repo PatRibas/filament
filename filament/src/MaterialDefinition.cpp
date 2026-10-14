@@ -48,6 +48,19 @@ using namespace utils;
 
 namespace {
 
+MaterialCache::ProgramCacheEntry makeProgramCacheEntry(FEngine& engine,
+        ProgramSpecialization const& specialization, Handle<HwProgram> program) {
+    MaterialCache::ProgramCacheEntry entry{
+        program,
+        engine.getMaterialCache().getSpecializationConstantsInternPool().acquire(
+                specialization.specializationConstants),
+    };
+    // The pool interns by content, so the reference we just took must be on the very slice the key
+    // points at. Were it a different one, keeping it alive wouldn't keep the key valid.
+    assert_invariant(entry.constants.get().data() == specialization.specializationConstants.data());
+    return entry;
+}
+
 template<bool useCache>
 void acquireProgramsImpl(FEngine& engine, Slice<Handle<HwProgram>> programCache,
         MaterialDefinition const& definition, MaterialParser const& parser,
@@ -68,17 +81,17 @@ void acquireProgramsImpl(FEngine& engine, Slice<Handle<HwProgram>> programCache,
     if constexpr (useCache) {
         for (auto variant: definition.getVariants()) {
             specialization.variant = variant;
-            for (auto specKey: DynamicSpecConstKey::getAllPossibleKeys()) {
-                specKey = DynamicSpecConstKey::filterProgramSpecKey(variant, specKey,
-                        definition.materialDomain, definition.isVariantLit);
+            for (auto const specKey: DynamicSpecConstKey::getValidKeys(variant,
+                    definition.materialDomain, definition.isVariantLit)) {
                 if (UTILS_LIKELY(definition.isValidProgram(variant, specKey, shaderModel,
                             isStereoSupported))) {
                     specialization.specKey = specKey;
-                    Handle<HwProgram> const* program = globalProgramCache.acquire(specialization);
-                    if (program) {
+                    MaterialCache::ProgramCacheEntry const* entry =
+                            globalProgramCache.acquire(specialization);
+                    if (entry) {
                         LocalProgramCache::CacheKey mappedKey =
-                                LocalProgramCache::mapCacheEntryKey(variant, specKey);
-                        programCache[mappedKey] = *program;
+                                LocalProgramCache::mapCacheEntryKey(variant, specKey, programCache.size());
+                        programCache[mappedKey] = entry->program;
                     }
                 }
             }
@@ -94,16 +107,17 @@ void acquireProgramsImpl(FEngine& engine, Slice<Handle<HwProgram>> programCache,
                         isStereoSupported))) {
                 specialization.variant = variant;
                 specialization.specKey = specKey;
-                LocalProgramCache::CacheKey mappedKey =
-                        LocalProgramCache::mapCacheEntryKey(variant, specKey);
+                LocalProgramCache::CacheKey mappedKey = LocalProgramCache::mapCacheEntryKey(variant,
+                        specKey, programCache.size());
                 if constexpr (useCache) {
-                    Handle<HwProgram> const* program = globalProgramCache.acquire(specialization,
-                            [&engine, &definition, &parser, &specialization]() {
-                                return definition.compileProgram(engine, parser, specialization,
-                                        CompilerPriorityQueue::HIGH);
+                    MaterialCache::ProgramCacheEntry const* entry = globalProgramCache.acquire(
+                            specialization, [&engine, &definition, &parser, &specialization]() {
+                                return makeProgramCacheEntry(engine, specialization,
+                                        definition.compileProgram(engine, parser, specialization,
+                                                CompilerPriorityQueue::HIGH));
                             });
-                    if (program) {
-                        programCache[mappedKey] = *program;
+                    if (entry) {
+                        programCache[mappedKey] = entry->program;
                     }
                 } else {
                     programCache[mappedKey] = definition.compileProgram(engine, parser,
@@ -119,11 +133,12 @@ void acquireProgramsImpl(FEngine& engine, Slice<Handle<HwProgram>> programCache,
                         isStereoSupported))) {
                 specialization.variant = variant;
                 specialization.specKey = specKey;
-                Handle<HwProgram> const* program = globalProgramCache.acquire(specialization);
-                if (program) {
+                MaterialCache::ProgramCacheEntry const* entry =
+                        globalProgramCache.acquire(specialization);
+                if (entry) {
                     LocalProgramCache::CacheKey mappedKey =
-                            LocalProgramCache::mapCacheEntryKey(variant, specKey);
-                    programCache[mappedKey] = *program;
+                            LocalProgramCache::mapCacheEntryKey(variant, specKey, programCache.size());
+                    programCache[mappedKey] = entry->program;
                 }
             }
         }
@@ -145,20 +160,20 @@ void releaseProgramsImpl(FEngine& engine, Slice<Handle<HwProgram>> programCache,
     };
 
     for (auto variant: definition.getVariants()) {
-        for (auto specKey: DynamicSpecConstKey::getAllPossibleKeys()) {
-            specKey = DynamicSpecConstKey::filterProgramSpecKey(variant, specKey,
-                    definition.materialDomain, definition.isVariantLit);
+        for (auto const specKey: DynamicSpecConstKey::getValidKeys(variant,
+                definition.materialDomain, definition.isVariantLit)) {
             if (UTILS_LIKELY(definition.isValidProgram(variant, specKey, shaderModel,
                         isStereoSupported))) {
-                LocalProgramCache::CacheKey mappedKey =
-                        LocalProgramCache::mapCacheEntryKey(variant, specKey);
+                LocalProgramCache::CacheKey mappedKey = LocalProgramCache::mapCacheEntryKey(variant,
+                        specKey, programCache.size());
                 Handle<HwProgram>& program = programCache[mappedKey];
                 if constexpr (useCache) {
                     specialization.variant = variant;
                     specialization.specKey = specKey;
-                    globalProgramCache.release(specialization, [&engine](Handle<HwProgram> p) {
-                        engine.getDriverApi().destroyProgram(p);
-                    });
+                    globalProgramCache.release(specialization,
+                            [&engine](MaterialCache::ProgramCacheEntry& entry) {
+                                engine.getDriverApi().destroyProgram(entry.program);
+                            });
                 } else if (program) {
                     engine.getDriverApi().destroyProgram(program);
                 }
@@ -176,14 +191,15 @@ void releaseProgramsImpl(FEngine& engine, Slice<Handle<HwProgram>> programCache,
         if (UTILS_LIKELY(
                     definition.isValidProgram(variant, specKey, shaderModel, isStereoSupported))) {
             LocalProgramCache::CacheKey mappedKey =
-                    LocalProgramCache::mapCacheEntryKey(variant, specKey);
+                    LocalProgramCache::mapCacheEntryKey(variant, specKey, programCache.size());
             Handle<HwProgram>& program = programCache[mappedKey];
             if constexpr (useCache) {
                 specialization.variant = variant;
                 specialization.specKey = specKey;
-                globalProgramCache.release(specialization, [&engine](Handle<HwProgram> p) {
-                    engine.getDriverApi().destroyProgram(p);
-                });
+                globalProgramCache.release(specialization,
+                        [&engine](MaterialCache::ProgramCacheEntry& entry) {
+                            engine.getDriverApi().destroyProgram(entry.program);
+                        });
             } else if (destroySharedVariants && program) {
                 engine.getDriverApi().destroyProgram(program);
             }
@@ -238,6 +254,21 @@ std::unique_ptr<MaterialParser> MaterialDefinition::createParser(Backend const b
 
 std::unique_ptr<MaterialDefinition> MaterialDefinition::create(FEngine& engine,
         std::unique_ptr<MaterialParser> parser) {
+    MaterialDomain materialDomain{};
+    if (!parser->getMaterialDomain(&materialDomain)) {
+        LOG(ERROR) << "Material package is missing its material domain.";
+        return nullptr;
+    }
+    switch (materialDomain) {
+        case MaterialDomain::SURFACE:
+        case MaterialDomain::POST_PROCESS:
+        case MaterialDomain::COMPUTE:
+            break;
+        default:
+            LOG(ERROR) << "Invalid material domain: " << static_cast<uint32_t>(materialDomain);
+            return nullptr;
+    }
+
     // Try checking CRC32 value for the package and skip if it's unavailable.
     if (downcast(engine).features.material.check_crc32_after_loading) {
         uint32_t parsedCrc32 = 0;
@@ -274,9 +305,7 @@ std::unique_ptr<MaterialDefinition> MaterialDefinition::create(FEngine& engine,
 
     // Print a warning if the material's stereo type doesn't align with the engine's
     // setting.
-    MaterialDomain materialDomain;
     UserVariantFilterMask variantFilterMask;
-    parser->getMaterialDomain(&materialDomain);
     parser->getMaterialVariantFilterMask(&variantFilterMask);
     bool const hasStereoVariants =
             !(variantFilterMask & UserVariantFilterMask(UserVariantFilterBit::STE));
@@ -378,6 +407,7 @@ void MaterialDefinition::processMain() {
     mMaterialParser->getTransparencyMode(&transparencyMode);
     mMaterialParser->getDoubleSided(&doubleSided);
     mMaterialParser->getCullingMode(&cullingMode);
+    mMaterialParser->getInstanced(&instanced);
 
     if (shading == Shading::UNLIT) {
         mMaterialParser->hasShadowMultiplier(&hasShadowMultiplier);
@@ -598,6 +628,14 @@ void MaterialDefinition::processSpecializationConstants(FEngine& engine) {
                             +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_DYNAMIC_LIGHTING] =
             isVariantLit || hasShadowMultiplier;
 
+    specializationConstants[CONFIG_MAX_RESERVED_SPEC_CONSTANTS +
+            +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_EXTRA_DIRECTIONAL_LIGHTS] = false;
+
+    specializationConstants
+            [CONFIG_MAX_RESERVED_SPEC_CONSTANTS +
+                    +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_DIRECTIONAL_LIGHTING] =
+                    isVariantLit;
+
     // Initialize the rest of the reserved constants with a dummy value.
     for (size_t i = CONFIG_NEXT_RESERVED_SPEC_CONSTANT; i < CONFIG_MAX_RESERVED_SPEC_CONSTANTS;
             i++) {
@@ -728,15 +766,13 @@ void MaterialDefinition::processDescriptorSets(FEngine& engine) {
 
 backend::DescriptorSetLayout const& MaterialDefinition::getPerViewDescriptorSetLayoutDescription(
         Variant const variant, bool const useS2dDescriptorSetLayout) const noexcept {
-    if (materialDomain == MaterialDomain::SURFACE) {
-        if (Variant::isValidDepthVariant(variant)) {
-            // Use the layout description used to create the per view depth variant layout.
-            return descriptor_sets::getDepthVariantLayout();
-        }
-        if (Variant::isSSRVariant(variant)) {
-            // Use the layout description used to create the per view SSR variant layout.
-            return descriptor_sets::getSsrVariantLayout();
-        }
+    if (isValidDepthVariant(variant)) {
+        // Use the layout description used to create the per view depth variant layout.
+        return descriptor_sets::getDepthVariantLayout();
+    }
+    if (isSSRVariant(variant)) {
+        // Use the layout description used to create the per view SSR variant layout.
+        return descriptor_sets::getSsrVariantLayout();
     }
     if (useS2dDescriptorSetLayout) {
         return perViewDescriptorSetLayoutS2dDescription;
@@ -749,6 +785,7 @@ Handle<HwProgram> MaterialDefinition::compileProgram(
         ProgramSpecialization const& specialization,
         CompilerPriorityQueue const priorityQueue) const noexcept {
     assert_invariant(engine.hasFeatureLevel(featureLevel));
+    assert_invariant(isVariantValidForDomain(specialization.variant));
     Program pb;
     switch (materialDomain) {
         case MaterialDomain::SURFACE:
@@ -773,7 +810,7 @@ Handle<HwProgram> MaterialDefinition::compileProgram(
         pb.descriptorLayout(+DescriptorSetBindingPoints::PER_VIEW,
                 getPerViewDescriptorSetLayoutDescription(
                         specialization.variant,
-                        Variant::isShadowSampler2DVariant(specialization.variant)));
+                        isShadowSampler2DVariant(specialization.variant)));
         pb.descriptorLayout(+DescriptorSetBindingPoints::PER_RENDERABLE,
                 descriptor_sets::getPerRenderableLayout());
         pb.descriptorLayout(
@@ -801,7 +838,7 @@ Program MaterialDefinition::getSurfaceProgram(FEngine& engine, MaterialParser co
     Program pb = getProgramWithVariants(engine, parser, specialization, vertexVariant, fragmentVariant);
     pb.multiview(
             engine.getConfig().stereoscopicType == StereoscopicType::MULTIVIEW &&
-            Variant::isStereoVariant(specialization.variant));
+            isStereoVariant(specialization.variant));
     return pb;
 }
 
@@ -908,6 +945,12 @@ Program MaterialDefinition::getProgramWithVariants(FEngine const& engine,
         constants[CONFIG_MAX_RESERVED_SPEC_CONSTANTS +
                   +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_DYNAMIC_LIGHTING] =
                 specialization.specKey.hasDynamicLighting();
+        constants[CONFIG_MAX_RESERVED_SPEC_CONSTANTS +
+                  +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_EXTRA_DIRECTIONAL_LIGHTS] =
+                specialization.specKey.hasExtraDirectionalLights();
+        constants[CONFIG_MAX_RESERVED_SPEC_CONSTANTS +
+                  +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_DIRECTIONAL_LIGHTING] =
+                specialization.specKey.hasDirectionalLighting();
     }
     program.specializationConstants(std::move(constants));
 
@@ -925,16 +968,19 @@ Program MaterialDefinition::getProgramWithVariants(FEngine const& engine,
 Handle<HwProgram> MaterialDefinition::prepareProgram(FEngine& engine, DriverApi& driver,
         MaterialParser const& parser, ProgramSpecialization const& specialization,
         CompilerPriorityQueue priorityQueue) const {
-    if (!isValidProgram(specialization.variant, specialization.specKey, engine.getShaderModel(), driver.isStereoSupported())) {
+    if (!isValidProgram(specialization.variant, specialization.specKey, engine.getShaderModel(),
+                driver.isStereoSupported())) {
         return {};
     }
     if (UTILS_LIKELY(engine.features.engine.enable_program_cache && parser == *mMaterialParser)) {
-        Handle<HwProgram>* program = engine.getMaterialCache().getProgramCache().get(specialization,
-                [this, &engine, &parser, &specialization, priorityQueue]() {
-                    return compileProgram(engine, parser, specialization, priorityQueue);
-                });
-        assert_invariant(*program);
-        return *program;
+        MaterialCache::ProgramCacheEntry* entry =
+                engine.getMaterialCache().getProgramCache().get(specialization,
+                        [this, &engine, &parser, &specialization, priorityQueue]() {
+                            return makeProgramCacheEntry(engine, specialization,
+                                    compileProgram(engine, parser, specialization, priorityQueue));
+                        });
+        assert_invariant(entry->program);
+        return entry->program;
     } else {
         return compileProgram(engine, parser, specialization, priorityQueue);
     }
@@ -969,7 +1015,8 @@ void MaterialDefinition::releasePrograms(FEngine& engine,
 
 bool MaterialDefinition::isValidProgram(Variant const variant, DynamicSpecConstKey const specKey,
         ShaderModel const sm, bool isStereoSupported) const noexcept {
-    if (!isStereoSupported && Variant::isStereoVariant(variant)) {
+    assert_invariant(isVariantValidForDomain(variant));
+    if (!isStereoSupported && isStereoVariant(variant)) {
         return false;
     }
 

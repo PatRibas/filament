@@ -15,6 +15,21 @@
  */
 
 /*
+ * ================================================================================================
+ * WARNING: THIS FILE IS PARTIALLY AUTO-GENERATED!
+ *
+ * - Manual edits must ONLY be placed in the top (hand-written) section of this file, ABOVE the
+ *   beamsplitter marker comment near the bottom.
+ *
+ * - Do NOT append manual definitions at the end of this file! Anything placed below the
+ *   generator marker comment is automatically overwritten when running `tools/beamsplitter`.
+ *
+ * - To regenerate the generated section from filament/include/filament/Options.h:
+ *       cd tools/beamsplitter && go run .
+ * ================================================================================================
+ */
+
+/*
  * This file declares TypeScript annotations for Filament, which is implemented with an external
  * WASM library. The annotations declared in this file must match the bindings that are defined
  * in jsbindings. Note that clients are not required to use glMatrix, but we provide annotations for
@@ -40,6 +55,23 @@ export enum Backend {
     METAL,
     WEBGPU,
     NOOP,
+}
+
+export enum Fence$Mode {
+    FLUSH,
+    DONT_FLUSH,
+}
+
+export enum FenceStatus {
+    ERROR,
+    CONDITION_SATISFIED,
+    TIMEOUT_EXPIRED,
+}
+
+export enum RenderableManager$Builder$GeometryType {
+    DYNAMIC,
+    STATIC_BOUNDS,
+    STATIC,
 }
 
 export function init(assets: string[], onready?: (() => void) | null): void;
@@ -79,6 +111,12 @@ export class SwapChain {
     public static isSRGBSwapChainSupported(engine: Engine): boolean;
 }
 
+export class Fence {
+    // WebGL cannot block the main thread, so the default timeout of 0 simply queries the
+    // current status of the fence.
+    public wait(mode?: Fence$Mode, timeout?: number): FenceStatus;
+}
+
 export interface PickingQueryResult {
     renderable: Entity;
     depth: number;
@@ -107,9 +145,16 @@ export interface Renderer$ClearOptions {
     discard?: boolean;
 }
 
+export interface LightManager$ShadowOptions$Vsm {
+    elvsm?: boolean;
+    blurWidth?: number;
+}
+
 export interface LightManager$ShadowOptions {
     mapSize?: number;
     shadowCascades?: number;
+    cascadeSplitPositions?: float3;
+    vsm?: LightManager$ShadowOptions$Vsm;
     constantBias?: number;
     normalBias?: number;
     shadowFar?: number;
@@ -121,6 +166,13 @@ export interface LightManager$ShadowOptions {
     screenSpaceContactShadows?: boolean;
     stepCount?: number;
     maxShadowDistance?: number;
+    lispsm?: boolean;
+    shadowBulbRadius?: number;
+    penumbraScale?: number;
+    penumbraRatioScale?: number;
+    maxPenumbraRatio?: number;
+    maxSearchRadius?: number;
+    transform?: quat;
 }
 
 // Clients should use the [Buffer] helper function to wrap a typed array as a BufferDescriptor.
@@ -161,6 +213,44 @@ export class Texture {
     public static isTextureFormatMipmappable(engine: Engine, format: Texture$InternalFormat): boolean;
     public static validatePixelFormatAndType(internalFormat: Texture$InternalFormat,
             format: PixelDataFormat, type: PixelDataType): boolean;
+    public static isTextureSwizzleSupported(engine: Engine): boolean;
+}
+
+export class SkinningBuffer$Builder {
+    public boneCount(count: number): SkinningBuffer$Builder;
+    public initialize(initialize: boolean): SkinningBuffer$Builder;
+    public build(engine: Engine): SkinningBuffer;
+}
+
+export class SkinningBuffer {
+    public static Builder(): SkinningBuffer$Builder;
+    public getBoneCount(): number;
+    public setBones(engine: Engine, transforms: RenderableManager$Bone[], offset: number): void;
+    public setBonesFromMatrices(engine: Engine, transforms: mat4[], offset: number): void;
+}
+
+export class MorphTargetBuffer$Builder {
+    public vertexCount(vertexCount: number): MorphTargetBuffer$Builder;
+    public count(count: number): MorphTargetBuffer$Builder;
+    public withPositions(enable: boolean): MorphTargetBuffer$Builder;
+    public withTangents(enable: boolean): MorphTargetBuffer$Builder;
+    public enableCustomMorphing(enable: boolean): MorphTargetBuffer$Builder;
+    public build(engine: Engine): MorphTargetBuffer;
+}
+
+export class MorphTargetBuffer {
+    public static Builder(): MorphTargetBuffer$Builder;
+    public getVertexCount(): number;
+    public getCount(): number;
+    public hasPositions(): boolean;
+    public hasTangents(): boolean;
+    public isCustomMorphingEnabled(): boolean;
+    // positions is a flat array of floats with 3 components per position.
+    public setPositionsAt(engine: Engine, targetIndex: number, positions: number[]|Float32Array,
+            count: number, offset: number): void;
+    // tangents is a flat array of signed shorts with 4 components per quaternion.
+    public setTangentsAt(engine: Engine, targetIndex: number, tangents: number[]|Int16Array,
+            count: number, offset: number): void;
 }
 
 // TODO: Remove the entity type and just use integers for parity with Filament's Java bindings.
@@ -197,6 +287,9 @@ export class TextureSampler {
 
 export class MaterialInstance {
     public getName(): string;
+    public getMaterial(): Material;
+    public duplicate(): MaterialInstance;
+    public duplicateNamed(name: string): MaterialInstance;
     public setBoolParameter(name: string, value: boolean): void;
     public setFloatParameter(name: string, value: number): void;
     public setFloat2Parameter(name: string, value: float2): void;
@@ -212,6 +305,11 @@ export class MaterialInstance {
     public setColor4Parameter(name: string, ctype: RgbaType, value: float4): void;
     public setPolygonOffset(scale: number, constant: number): void;
     public setMaskThreshold(threshold: number): void;
+    public setScissor(left: number, bottom: number, width: number, height: number): void;
+    public unsetScissor(): void;
+    public getConstantBool(name: string): boolean;
+    public getConstantFloat(name: string): number;
+    public getConstantInt(name: string): number;
     public setDoubleSided(doubleSided: boolean): void;
     public setCullingMode(mode: CullingMode): void;
     public setColorWrite(enable: boolean): void;
@@ -279,6 +377,11 @@ export class RenderableManager$Builder {
             ib: IndexBuffer, offset: number, count: number): RenderableManager$Builder;
     public geometryMinMax(slot: number, ptype: RenderableManager$PrimitiveType, vb: VertexBuffer,
             ib: IndexBuffer, offset: number, minIndex: number, maxIndex: number, count: number): RenderableManager$Builder;
+    public geometryNoIndices(slot: number, ptype: RenderableManager$PrimitiveType,
+            vb: VertexBuffer): RenderableManager$Builder;
+    public geometryNoIndicesOffset(slot: number, ptype: RenderableManager$PrimitiveType,
+            vb: VertexBuffer, offset: number, count: number): RenderableManager$Builder;
+    public geometryType(type: RenderableManager$Builder$GeometryType): RenderableManager$Builder;
     public material(geo: number, minstance: MaterialInstance): RenderableManager$Builder;
     public boundingBox(box: Box): RenderableManager$Builder;
     public layerMask(select: number, values: number): RenderableManager$Builder;
@@ -289,7 +392,14 @@ export class RenderableManager$Builder {
     public skinning(boneCount: number): RenderableManager$Builder;
     public skinningBones(transforms: RenderableManager$Bone[]): RenderableManager$Builder;
     public skinningMatrices(transforms: mat4[]): RenderableManager$Builder;
+    public skinningBuffer(skinningBuffer: SkinningBuffer, boneCount: number,
+            offset: number): RenderableManager$Builder;
+    public enableSkinningBuffers(enabled: boolean): RenderableManager$Builder;
     public morphing(enable: boolean): RenderableManager$Builder;
+    public morphingTargetCount(targetCount: number): RenderableManager$Builder;
+    public morphingBuffer(morphTargetBuffer: MorphTargetBuffer): RenderableManager$Builder;
+    public morphingBufferOffset(level: number, primitiveIndex: number,
+            offset: number): RenderableManager$Builder;
     public blendOrder(index: number, order: number): RenderableManager$Builder;
     public globalBlendOrderEnabled(index: number, enabled: boolean): RenderableManager$Builder;
     public lightChannel(channel: number, enable: boolean): RenderableManager$Builder;
@@ -335,6 +445,7 @@ export class Skybox$Builder {
 
 export class LightManager {
     public hasComponent(entity: Entity): boolean;
+    public getComponentCount(): number;
     public getInstance(entity: Entity): LightManager$Instance;
     public static Builder(ltype: LightManager$Type): LightManager$Builder;
     public getType(instance: LightManager$Instance): LightManager$Type;
@@ -398,6 +509,9 @@ export class RenderableManager {
     public setGeometryAt(instance: RenderableManager$Instance, primitiveIndex: number,
             type: RenderableManager$PrimitiveType, vertices: VertexBuffer, indices: IndexBuffer,
             offset: number, count: number): void;
+    public setGeometryNoIndicesAt(instance: RenderableManager$Instance, primitiveIndex: number,
+            type: RenderableManager$PrimitiveType, vertices: VertexBuffer,
+            offset: number, count: number): void;
     public setBlendOrderAt(instance: RenderableManager$Instance, primitiveIndex: number,
             order: number): void;
     public getEnabledAttributesAt(instance: RenderableManager$Instance,
@@ -415,6 +529,7 @@ export class RenderableManager {
     public setScreenSpaceContactShadows(instance: RenderableManager$Instance, enable: boolean): void;
     public isScreenSpaceContactShadowsEnabled(instance: RenderableManager$Instance): boolean;
     public getInstanceCount(instance: RenderableManager$Instance): number;
+    public setInstanceCount(instance: RenderableManager$Instance, instanceCount: number): void;
     public clearMaterialInstanceAt(instance: RenderableManager$Instance, primitiveIndex: number): void;
     public getBlendOrderAt(instance: RenderableManager$Instance, primitiveIndex: number): number;
     public setGlobalBlendOrderEnabledAt(instance: RenderableManager$Instance,
@@ -460,6 +575,16 @@ export class Renderer {
     public setVsyncTime(steadyClockTimeNano: number): void;
     public skipFrame(vsyncSteadyClockTimeNano: number): void;
     public shouldRenderFrame(): boolean;
+    public copyFrame(dstSwapChain: SwapChain, dstViewport: float4, srcViewport: float4,
+            flags: number): void;
+    // The Uint8Array passed to the callback is only valid for the duration of the callback,
+    // copy it to retain the pixel data.
+    public readPixels(x: number, y: number, width: number, height: number,
+            format: PixelDataFormat, type: PixelDataType,
+            callback: (pixels: Uint8Array) => void): void;
+    public readPixels(renderTarget: RenderTarget, x: number, y: number, width: number,
+            height: number, format: PixelDataFormat, type: PixelDataType,
+            callback: (pixels: Uint8Array) => void): void;
 }
 
 export class Material {
@@ -512,6 +637,7 @@ export class Camera {
     public getShutterSpeed(): number;
     public getSensitivity(): number;
     public getFocalLength(): number;
+    public getFieldOfViewInDegrees(direction: Camera$Fov): number;
     public getFocusDistance(): number;
     public setFocusDistance(distance: number): void;
     public setShift(shift: double2): void;
@@ -540,6 +666,7 @@ export class ColorGrading$Builder {
     public saturation(saturation: number): ColorGrading$Builder;
     public curves(shadowGamma: float3, midPoint: float3,
             highlightScale: float3): ColorGrading$Builder;
+    public customLut(lut: any, dimension: number): ColorGrading$Builder;
     public fastMath(fastMath: boolean): ColorGrading$Builder;
     public build(engine: Engine): ColorGrading;
 }
@@ -602,6 +729,7 @@ export class View {
     public pick(x: number, y: number, cb: PickCallback): void;
     public setCamera(camera: Camera): void;
     public setColorGrading(colorGrading: ColorGrading): void;
+    public getColorGrading(): ColorGrading;
     public setScene(scene: Scene): void;
     public setViewport(viewport: float4): void;
     public setVisibleLayers(select: number, values: number): void;
@@ -629,6 +757,15 @@ export class View {
     public getViewport(): float4;
     public hasCamera(): boolean;
     public setShadowingEnabled(enabled: boolean): void;
+    public isShadowingEnabled(): boolean;
+    public setShadowType(type: View$ShadowType): void;
+    public getShadowType(): View$ShadowType;
+    public setVsmShadowOptions(options: View$VsmShadowOptions): void;
+    public getVsmShadowOptions(): View$VsmShadowOptions;
+    public setSoftShadowOptions(options: View$SoftShadowOptions): void;
+    public getSoftShadowOptions(): View$SoftShadowOptions;
+    public setFrustumCullingEnabled(enabled: boolean): void;
+    public isFrustumCullingEnabled(): boolean;
     public setChannelDepthClearEnabled(channel: number, enabled: boolean): void;
     public isChannelDepthClearEnabled(channel: number): boolean;
     public getSampleCount(): number;
@@ -701,6 +838,7 @@ export class DecodedImage {
 }
 
 export class Engine {
+    public static readonly SINGLE_THREADED: number;
     public static create(canvas: HTMLCanvasElement, options?: { backend?: Backend }): Engine;
     public static destroy(engine: Engine): void;
     public execute(): void;
@@ -754,6 +892,13 @@ export class Engine {
     public hasUnrecoverableFailure(): boolean;
     public setAutomaticInstancingEnabled(enable: boolean): void;
     public isAutomaticInstancingEnabled(): boolean;
+    public createFence(): Fence;
+    public destroyFence(fence: Fence): void;
+    public destroySkinningBuffer(skinningBuffer: SkinningBuffer): void;
+    public destroyMorphTargetBuffer(morphTargetBuffer: MorphTargetBuffer): void;
+    public isValidFence(fence: Fence): boolean;
+    public isValidSkinningBuffer(skinningBuffer: SkinningBuffer): boolean;
+    public isValidMorphTargetBuffer(morphTargetBuffer: MorphTargetBuffer): boolean;
     public getSupportedFeatureLevel(): FeatureLevel;
     public setActiveFeatureLevel(featureLevel: FeatureLevel): FeatureLevel;
     public getActiveFeatureLevel(): FeatureLevel;
@@ -842,6 +987,7 @@ export class gltfio$FilamentAsset {
     public getExtras(entity: Entity): string;
     public getWireframe(): Entity;
     public getEngine(): Engine;
+    public getMorphTargetNames(entity: Entity): string[];
     public releaseSourceData(): void;
     public getFirstEntityByName(name: string): Entity;
 }
@@ -852,6 +998,9 @@ export class gltfio$FilamentInstance {
     public getRoot(): Entity;
     public getAnimator(): gltfio$Animator;
     public getSkinNames(): Vector<string>;
+    public getSkinCount(): number;
+    public getJointCountAt(skinIndex: number): number;
+    public getJointsAt(skinIndex: number): Entity[];
     public attachSkin(skinIndex: number, entity: Entity): void;
     public detachSkin(skinIndex: number, entity: Entity): void;
     public getMaterialInstances(): Vector<MaterialInstance>;
@@ -905,6 +1054,7 @@ export class SurfaceOrientation$Builder {
     public constructor();
     public vertexCount(count: number): SurfaceOrientation$Builder;
     public normals(vec3array: Float32Array, stride: number): SurfaceOrientation$Builder;
+    public tangents(vec4array: Float32Array, stride: number): SurfaceOrientation$Builder;
     public uvs(vec2array: Float32Array, stride: number): SurfaceOrientation$Builder;
     public positions(vec3array: Float32Array, stride: number): SurfaceOrientation$Builder;
     public triangleCount(count: number): SurfaceOrientation$Builder;
@@ -1371,6 +1521,334 @@ interface HeapInterface {
 }
 
 export const HEAPU8 : HeapInterface;
+
+export enum Camutils$Mode {
+    ORBIT,
+    MAP,
+    FREE_FLIGHT,
+}
+
+export enum Camutils$Fov {
+    VERTICAL,
+    HORIZONTAL,
+}
+
+export enum Camutils$Key {
+    FORWARD,
+    LEFT,
+    BACKWARD,
+    RIGHT,
+    UP,
+    DOWN,
+}
+
+export class Camutils$Bookmark {
+    public static interpolate(a: Camutils$Bookmark, b: Camutils$Bookmark, t: number): Camutils$Bookmark;
+    public static duration(a: Camutils$Bookmark, b: Camutils$Bookmark): number;
+}
+
+export class Camutils$Manipulator {
+    public setViewport(width: number, height: number): void;
+    public getLookAt(eye: float3, target: float3, up: float3): void;
+    public raycast(x: number, y: number, result: float3): boolean;
+    public getRay(x: number, y: number, origin: float3, dir: float3): void;
+    public grabBegin(x: number, y: number, strafe: boolean): void;
+    public grabUpdate(x: number, y: number): void;
+    public grabEnd(): void;
+    public keyDown(key: Camutils$Key): void;
+    public keyUp(key: Camutils$Key): void;
+    public scroll(x: number, y: number, scrolldelta: number): void;
+    public update(deltaTime: number): void;
+    public getCurrentBookmark(): Camutils$Bookmark;
+    public getHomeBookmark(): Camutils$Bookmark;
+    public jumpToBookmark(bookmark: Camutils$Bookmark): void;
+    public attach(canvas: HTMLCanvasElement): void;
+    public detach(canvas: HTMLCanvasElement): void;
+}
+
+export class Camutils$Manipulator$Builder {
+    constructor();
+    public viewport(width: number, height: number): Camutils$Manipulator$Builder;
+    public targetPosition(x: number, y: number, z: number): Camutils$Manipulator$Builder;
+    public upVector(x: number, y: number, z: number): Camutils$Manipulator$Builder;
+    public zoomSpeed(val: number): Camutils$Manipulator$Builder;
+    public orbitHomePosition(x: number, y: number, z: number): Camutils$Manipulator$Builder;
+    public orbitSpeed(x: number, y: number): Camutils$Manipulator$Builder;
+    public fovDirection(fov: Camutils$Fov): Camutils$Manipulator$Builder;
+    public fovDegrees(degrees: number): Camutils$Manipulator$Builder;
+    public farPlane(distance: number): Camutils$Manipulator$Builder;
+    public mapExtent(worldWidth: number, worldHeight: number): Camutils$Manipulator$Builder;
+    public mapMinDistance(mindist: number): Camutils$Manipulator$Builder;
+    public flightStartPosition(x: number, y: number, z: number): Camutils$Manipulator$Builder;
+    public flightStartOrientation(pitch: number, yaw: number): Camutils$Manipulator$Builder;
+    public flightMaxMoveSpeed(maxSpeed: number): Camutils$Manipulator$Builder;
+    public flightSpeedSteps(steps: number): Camutils$Manipulator$Builder;
+    public flightPanSpeed(x: number, y: number): Camutils$Manipulator$Builder;
+    public flightMoveDamping(damping: number): Camutils$Manipulator$Builder;
+    public groundPlane(a: number, b: number, c: number, d: number): Camutils$Manipulator$Builder;
+    public panning(enabled: boolean): Camutils$Manipulator$Builder;
+    public build(mode: Camutils$Mode): Camutils$Manipulator;
+}
+
+export enum viewer$ToneMapping {
+    LINEAR,
+    ACES_LEGACY,
+    ACES,
+    FILMIC,
+    AGX,
+    GENERIC,
+    PBR_NEUTRAL,
+    GT7,
+    DISPLAY_RANGE,
+}
+
+export enum viewer$CustomLut {
+    NONE,
+    NEGATIVE,
+    GRAYSCALE,
+    SEPIA,
+    TEAL_AND_ORANGE,
+}
+
+export enum AgxToneMapper$AgxLook {
+    NONE,
+    PUNCHY,
+    GOLDEN,
+}
+
+export enum AutomationEngine$ExportFormat {
+    TIFF,
+    PPM,
+}
+
+export interface GenericToneMapperSettings {
+    contrast: number;
+    midGrayIn: number;
+    midGrayOut: number;
+    hdrMax: number;
+}
+
+export interface AgxToneMapperSettings {
+    look: AgxToneMapper$AgxLook;
+}
+
+export interface ColorGradingSettings {
+    enabled: boolean;
+    linkedCurves: boolean;
+    luminanceScaling: boolean;
+    gamutMapping: boolean;
+    quality: ColorGrading$QualityLevel;
+    toneMapping: viewer$ToneMapping;
+    customLut: viewer$CustomLut;
+    agxToneMapper: AgxToneMapperSettings;
+    colorspace: any; // color::ColorSpace is not fully bound
+    genericToneMapper: GenericToneMapperSettings;
+    shadows: float4;
+    midtones: float4;
+    highlights: float4;
+    ranges: float4;
+    outRed: float3;
+    outGreen: float3;
+    outBlue: float3;
+    slope: float3;
+    offset: float3;
+    power: float3;
+    gamma: float3;
+    midPoint: float3;
+    scale: float3;
+    exposure: number;
+    nightAdaptation: number;
+    temperature: number;
+    tint: number;
+    contrast: number;
+    vibrance: number;
+    saturation: number;
+}
+
+export interface DynamicLightingSettings {
+    zLightNear: number;
+    zLightFar: number;
+}
+
+export interface FogSettings {
+    fogColorTexture: Texture | null;
+}
+
+export interface ViewSettings {
+    antiAliasing: View$AntiAliasing;
+    dithering: View$Dithering;
+    shadowType: View$ShadowType;
+    postProcessingEnabled: boolean;
+    ssao: View$AmbientOcclusionOptions;
+    screenSpaceReflections: View$ScreenSpaceReflectionsOptions;
+    bloom: View$BloomOptions;
+    dof: View$DepthOfFieldOptions;
+    dsr: View$DynamicResolutionOptions;
+    fog: View$FogOptions;
+    msaa: View$MultiSampleAntiAliasingOptions;
+    renderQuality: View$RenderQuality;
+    taa: View$TemporalAntiAliasingOptions;
+    vignette: View$VignetteOptions;
+    vsmShadowOptions: View$VsmShadowOptions;
+    guardBand: View$GuardBandOptions;
+    stereoscopicOptions: View$StereoscopicOptions;
+    colorGrading: ColorGradingSettings;
+    dynamicLighting: DynamicLightingSettings;
+    fogSettings: FogSettings;
+    blendMode: View$BlendMode;
+    stencilBufferEnabled: boolean;
+    visibleLayers: number;
+}
+
+export interface LightDefinition {
+    type: LightManager$Type;
+    position: float3;
+    direction: float3;
+    color: float3;
+    intensity: number;
+    falloff: number;
+    spotInner: number;
+    spotOuter: number;
+    sunHaloSize: number;
+    sunHaloFalloff: number;
+    sunAngularRadius: number;
+    castShadows: boolean;
+    shadowOptions: LightManager$ShadowOptions;
+}
+
+export interface LightSettings {
+    enableShadows: boolean;
+    enableSunlight: boolean;
+    softShadowOptions: View$SoftShadowOptions;
+    iblIntensity: number;
+    iblRotation: number;
+    sunlight: LightDefinition;
+    lights: LightDefinition[];
+}
+
+export interface CameraSettings {
+    center: float3;
+    lookAt: float3;
+    up: float3;
+    horizontalFov: number;
+    near: number;
+    far: number;
+    focalLength: number;
+    aperture: number;
+    shutterSpeed: number;
+    sensitivity: number;
+    focusDistance: number;
+    eyeOcularDistance: number;
+    eyeToeIn: number;
+    projection: Camera$Projection;
+    enabled: boolean;
+    scaling: float2;
+    shift: float2;
+}
+
+export interface AnimationSettings {
+    enabled: boolean;
+    time: number;
+    speed: number;
+}
+
+export interface RenderSettings {
+    clearOptions: Renderer$ClearOptions;
+    frameRateOptions: any;
+}
+
+export interface ViewerOptions {
+    groundShadowStrength: number;
+    groundPlaneEnabled: boolean;
+    skyboxEnabled: boolean;
+    backgroundColor: float3;
+    autoScaleEnabled: boolean;
+    autoInstancingEnabled: boolean;
+}
+
+export interface DebugOptions {
+    skipFrames: number;
+}
+
+export interface viewer$Settings {
+    view: ViewSettings;
+    lighting: LightSettings;
+    viewer: ViewerOptions;
+    camera: CameraSettings;
+    animation: AnimationSettings;
+    render: RenderSettings;
+    debug: DebugOptions;
+}
+
+export interface ViewerContent {
+    view: View;
+    renderer: Renderer;
+    materials: MaterialInstance[];
+    lightManager: LightManager;
+    scene: Scene;
+    indirectLight: IndirectLight | null;
+    sunlight: Entity;
+    assetLights: Entity[];
+}
+
+export class JsonSerializer {
+    constructor();
+    writeJson(settings: viewer$Settings): string;
+    readJson(json: string, settings: viewer$Settings): boolean;
+}
+
+export class AutomationSpec {
+    static generate(json: string): AutomationSpec | null;
+    static generateDefaultTestCases(): AutomationSpec;
+    size(): number;
+    get(index: number, out: viewer$Settings): boolean;
+    getName(index: number): string;
+    delete(): void;
+}
+
+export interface AutomationEngine$Options {
+    sleepDuration: number;
+    minFrameCount: number;
+    verbose: boolean;
+    exportScreenshots: boolean;
+    exportSettings: boolean;
+    exportFormat: AutomationEngine$ExportFormat;
+}
+
+export class AutomationEngine {
+    constructor(spec: AutomationSpec, settings: viewer$Settings);
+    static createFromJSON(json: string): AutomationEngine | null;
+    static createDefault(): AutomationEngine;
+    startRunning(): void;
+    startBatchMode(): void;
+    tick(engine: Engine, content: ViewerContent, deltaTime: number): void;
+    applySettings(engine: Engine, json: string, content: ViewerContent): void;
+    getColorGrading(engine: Engine): ColorGrading;
+    getViewerOptions(): ViewerOptions;
+    getSettings(): viewer$Settings;
+    signalBatchMode(): void;
+    stopRunning(): void;
+    terminate(): void;
+    shouldClose(): boolean;
+    getOptions(): AutomationEngine$Options;
+    setOptions(options: AutomationEngine$Options): void;
+    isRunning(): boolean;
+    currentTest(): number;
+    testCount(): number;
+    getStatusMessage(): string;
+    delete(): void;
+}
+
+export class ViewerGui {
+    constructor(engine: Engine, scene: Scene, view: View, sidebarWidth: number);
+    renderUserInterface(timeStepInSeconds: number, guiView: View, pixelRatio: number): void;
+    getSettings(): viewer$Settings;
+    mouseEvent(mouseX: number, mouseY: number, mouseButton: boolean, mouseWheelY: number, control: boolean): void;
+    keyDownEvent(keyCode: number): void;
+    keyUpEvent(keyCode: number): void;
+    keyPressEvent(charCode: number): void;
+    delete(): void;
+}
 
 // The remainder of this file is generated by beamsplitter
 
@@ -1970,11 +2448,11 @@ export enum View$Dithering {
 export enum View$ShadowType {
     PCF, // /** percentage-closer filtered shadows (default) */
 
-    VSM, // /** variance shadows */
+    VSM, // /** exponential variance shadows (EVSM) */
 
-    DPCF, // /** PCF with contact hardening simulation */
+    DPCF, // /** @deprecated falls back to PCSS */
 
-    PCSS, // /** PCF with soft shadows and contact hardening */
+    PCSS, // /** EVSM with soft shadows and contact hardening */
 
     PCFd,
 }
@@ -2022,23 +2500,100 @@ export interface View$VsmShadowOptions {
 }
 
 /**
- * View-level options for DPCF and PCSS Shadowing.
+ * View-level options for PCSS Shadowing.
  * @see #setSoftShadowOptions
  * <b>Warning:</b> This API is still experimental and subject to change.
  */
 export interface View$SoftShadowOptions {
     /**
-     * Globally scales the penumbra of all DPCF and PCSS shadows
-     * Acceptable values are greater than 0
+     * Sets a global scale factor applied to the final penumbra size of all PCSS shadows.
+     *
+     * This parameter acts as an artistic modifier, uniformly scaling the overall softness
+     * of shadows across the entire scene without altering the physical angular size of
+     * the light sources.
+     *
+     * The final scale applied to a shadow is calculated by modulating this global
+     * value with the light's individual penumbraScale (global * local). This allows
+     * art directors to shift the global mood (e.g., making all shadows 20% softer)
+     * while preserving the relative contrast between different lights.
+     *
+     * The global penumbra scale multiplier. Default is 1.0 (physically based).
+     *
+     * @see LightManager::ShadowOptions::penumbraScale
      */
     penumbraScale?: number;
     /**
-     * Globally scales the computed penumbra ratio of all DPCF and PCSS shadows.
-     * This effectively controls the strength of contact hardening effect and is useful for
-     * artistic purposes. Higher values make the shadows become softer faster.
-     * Acceptable values are equal to or greater than 1.
+     * Sets a global scale factor applied to the PCSS geometric ratio before failsafe clamping.
+     *
+     * This parameter controls the "contact shadow contrast" or the rate at which shadows
+     * transition from sharp to soft. By scaling the geometric ratio, you can create
+     * highly dramatic, cinematic shadows that blur rapidly as they move away from the
+     * contact point, completely independently of the light's overall physical size.
+     *
+     * - Values > 1.0 cause the shadow to accelerate toward its maximum softness faster.
+     * - Values < 1.0 cause the shadow to stay sharper for a longer distance.
+     *
+     * The final ratio scale applied is calculated by modulating this global value with
+     * the light's individual penumbraRatioScale (global * local).
+     *
+     * The global penumbra ratio scale multiplier. Default is 1.0.
+     *
+     * @see LightManager::ShadowOptions::penumbraRatioScale
      */
     penumbraRatioScale?: number;
+    /**
+     * Sets the global default maximum geometric ratio applied to Percentage-Closer Soft Shadows (PCSS).
+     *
+     * In PCSS, the physical width of a shadow's penumbra is determined by the ratio:
+     * (distance_to_receiver - distance_to_blocker) / distance_to_blocker
+     *
+     * Standard shadow maps store a single depth layer (2.5D). When evaluating complex,
+     * overlapping occluders (e.g., foliage, layered floating geometry), the shadow map
+     * cannot resolve volumetric depth. This limitation can trick the blocker search into
+     * returning an artificially close depth value, driving the denominator toward zero.
+     * The resulting explosion in penumbra size causes unnatural, massive "ghost" shadows.
+     *
+     * maxPenumbraRatio applies a smooth, asymptotic squash to the geometric ratio, acting
+     * as both a mathematical failsafe and an artistic control. It guarantees the penumbra
+     * will gracefully stop expanding before it destroys the visual coherence of the scene.
+     *
+     * This global value acts as the baseline for all lights. Individual lights can explicitly
+     * override this default via the LightManager API to handle specific geometric artifacts
+     * without affecting the rest of the scene.
+     *
+     * - A lower value (e.g., 2.0) creates generally sharper, highly stable
+     * shadows that aggressively suppress 2.5D layered occlusion artifacts.
+     * - A higher value (e.g., 5.0+) allows for physically accurate, widely
+     * expanding soft shadows, but increases susceptibility to ghosting.
+     *
+     * @see LightManager::ShadowOptions::maxPenumbraRatio
+     */
+    maxPenumbraRatio?: number;
+    /**
+     * Sets the global default maximum world-space radius used during the PCSS blocker search.
+     *
+     * In PCSS, the shadow algorithm searches a region of the shadow map to find the
+     * average depth of occluders. For lights with a large angular size (or objects
+     * very far from the light), this search region can become massive.
+     * * If the search region expands too much, it may inadvertently overlap distinct
+     * foreground geometry (like a streetlight fixture) or climb vertical surfaces
+     * (like a pole), causing the shadow to detach from the contact point and appear
+     * to float.
+     *
+     * maxSearchRadius limits the physical footprint of this search. This global value acts
+     * as the baseline for all lights. Individual lights can explicitly override this default
+     * via the LightManager API to clamp the search footprint for specific geometric setups
+     * without affecting the rest of the scene.
+     *
+     * The maximum search radius in world-space meters:
+     * - A smaller value (e.g., 0.05 to 0.1) tightly anchors shadows to their
+     * contact points and prevents artifacts near complex light fixtures.
+     * - A larger value provides more physically accurate blocker averaging for
+     * massive area lights but increases the risk of floating geometry.
+     *
+     * @see LightManager::ShadowOptions::maxSearchRadius
+     */
+    maxSearchRadius?: number;
 }
 
 /**
@@ -2048,330 +2603,10 @@ export interface View$StereoscopicOptions {
     enabled?: boolean;
 }
 
-export enum Camutils$Mode {
-    ORBIT,
-    MAP,
-    FREE_FLIGHT,
-}
-
-export enum Camutils$Fov {
-    VERTICAL,
-    HORIZONTAL,
-}
-
-export enum Camutils$Key {
-    FORWARD,
-    LEFT,
-    BACKWARD,
-    RIGHT,
-    UP,
-    DOWN,
-}
-
-export class Camutils$Bookmark {
-    public static interpolate(a: Camutils$Bookmark, b: Camutils$Bookmark, t: number): Camutils$Bookmark;
-    public static duration(a: Camutils$Bookmark, b: Camutils$Bookmark): number;
-}
-
-export class Camutils$Manipulator {
-    public setViewport(width: number, height: number): void;
-    public getLookAt(eye: float3, target: float3, up: float3): void;
-    public raycast(x: number, y: number, result: float3): boolean;
-    public getRay(x: number, y: number, origin: float3, dir: float3): void;
-    public grabBegin(x: number, y: number, strafe: boolean): void;
-    public grabUpdate(x: number, y: number): void;
-    public grabEnd(): void;
-    public keyDown(key: Camutils$Key): void;
-    public keyUp(key: Camutils$Key): void;
-    public scroll(x: number, y: number, scrolldelta: number): void;
-    public update(deltaTime: number): void;
-    public getCurrentBookmark(): Camutils$Bookmark;
-    public getHomeBookmark(): Camutils$Bookmark;
-    public jumpToBookmark(bookmark: Camutils$Bookmark): void;
-    public attach(canvas: HTMLCanvasElement): void;
-    public detach(canvas: HTMLCanvasElement): void;
-}
-
-export class Camutils$Manipulator$Builder {
-    constructor();
-    public viewport(width: number, height: number): Camutils$Manipulator$Builder;
-    public targetPosition(x: number, y: number, z: number): Camutils$Manipulator$Builder;
-    public upVector(x: number, y: number, z: number): Camutils$Manipulator$Builder;
-    public zoomSpeed(val: number): Camutils$Manipulator$Builder;
-    public orbitHomePosition(x: number, y: number, z: number): Camutils$Manipulator$Builder;
-    public orbitSpeed(x: number, y: number): Camutils$Manipulator$Builder;
-    public fovDirection(fov: Camutils$Fov): Camutils$Manipulator$Builder;
-    public fovDegrees(degrees: number): Camutils$Manipulator$Builder;
-    public farPlane(distance: number): Camutils$Manipulator$Builder;
-    public mapExtent(worldWidth: number, worldHeight: number): Camutils$Manipulator$Builder;
-    public mapMinDistance(mindist: number): Camutils$Manipulator$Builder;
-    public flightStartPosition(x: number, y: number, z: number): Camutils$Manipulator$Builder;
-    public flightStartOrientation(pitch: number, yaw: number): Camutils$Manipulator$Builder;
-    public flightMaxMoveSpeed(maxSpeed: number): Camutils$Manipulator$Builder;
-    public flightSpeedSteps(steps: number): Camutils$Manipulator$Builder;
-    public flightPanSpeed(x: number, y: number): Camutils$Manipulator$Builder;
-    public flightMoveDamping(damping: number): Camutils$Manipulator$Builder;
-    public groundPlane(a: number, b: number, c: number, d: number): Camutils$Manipulator$Builder;
-    public panning(enabled: boolean): Camutils$Manipulator$Builder;
-    public build(mode: Camutils$Mode): Camutils$Manipulator;
-}
-
-export enum viewer$ToneMapping {
-    LINEAR,
-    ACES_LEGACY,
-    ACES,
-    FILMIC,
-    AGX,
-    GENERIC,
-    PBR_NEUTRAL,
-    GT7,
-    DISPLAY_RANGE,
-}
-
-export enum viewer$CustomLut {
-    NONE,
-    NEGATIVE,
-    GRAYSCALE,
-    SEPIA,
-    TEAL_AND_ORANGE,
-}
-
-export enum AgxToneMapper$AgxLook {
-    NONE,
-    PUNCHY,
-    GOLDEN,
-}
-
-export enum AutomationEngine$ExportFormat {
-    TIFF,
-    PPM,
-}
-
-export interface GenericToneMapperSettings {
-    contrast: number;
-    midGrayIn: number;
-    midGrayOut: number;
-    hdrMax: number;
-}
-
-export interface AgxToneMapperSettings {
-    look: AgxToneMapper$AgxLook;
-}
-
-export interface ColorGradingSettings {
-    enabled: boolean;
-    linkedCurves: boolean;
-    luminanceScaling: boolean;
-    gamutMapping: boolean;
-    quality: ColorGrading$QualityLevel;
-    toneMapping: viewer$ToneMapping;
-    customLut: viewer$CustomLut;
-    agxToneMapper: AgxToneMapperSettings;
-    colorspace: any; // color::ColorSpace is not fully bound
-    genericToneMapper: GenericToneMapperSettings;
-    shadows: float4;
-    midtones: float4;
-    highlights: float4;
-    ranges: float4;
-    outRed: float3;
-    outGreen: float3;
-    outBlue: float3;
-    slope: float3;
-    offset: float3;
-    power: float3;
-    gamma: float3;
-    midPoint: float3;
-    scale: float3;
-    exposure: number;
-    nightAdaptation: number;
-    temperature: number;
-    tint: number;
-    contrast: number;
-    vibrance: number;
-    saturation: number;
-}
-
-export interface DynamicLightingSettings {
-    zLightNear: number;
-    zLightFar: number;
-}
-
-export interface FogSettings {
-    fogColorTexture: Texture | null;
-}
-
-export interface ViewSettings {
-    antiAliasing: View$AntiAliasing;
-    dithering: View$Dithering;
-    shadowType: View$ShadowType;
-    postProcessingEnabled: boolean;
-    ssao: View$AmbientOcclusionOptions;
-    screenSpaceReflections: View$ScreenSpaceReflectionsOptions;
-    bloom: View$BloomOptions;
-    dof: View$DepthOfFieldOptions;
-    dsr: View$DynamicResolutionOptions;
-    fog: View$FogOptions;
-    msaa: View$MultiSampleAntiAliasingOptions;
-    renderQuality: View$RenderQuality;
-    taa: View$TemporalAntiAliasingOptions;
-    vignette: View$VignetteOptions;
-    vsmShadowOptions: View$VsmShadowOptions;
-    guardBand: View$GuardBandOptions;
-    stereoscopicOptions: View$StereoscopicOptions;
-    colorGrading: ColorGradingSettings;
-    dynamicLighting: DynamicLightingSettings;
-    fogSettings: FogSettings;
-    blendMode: View$BlendMode;
-    stencilBufferEnabled: boolean;
-    visibleLayers: number;
-}
-
-export interface LightDefinition {
-    type: LightManager$Type;
-    position: float3;
-    direction: float3;
-    color: float3;
-    intensity: number;
-    falloff: number;
-    spotInner: number;
-    spotOuter: number;
-    sunHaloSize: number;
-    sunHaloFalloff: number;
-    sunAngularRadius: number;
-    castShadows: boolean;
-    shadowOptions: LightManager$ShadowOptions;
-}
-
-export interface LightSettings {
-    enableShadows: boolean;
-    enableSunlight: boolean;
-    softShadowOptions: View$SoftShadowOptions;
-    iblIntensity: number;
-    iblRotation: number;
-    sunlight: LightDefinition;
-    lights: LightDefinition[];
-}
-
-export interface CameraSettings {
-    center: float3;
-    lookAt: float3;
-    up: float3;
-    horizontalFov: number;
-    near: number;
-    far: number;
-    focalLength: number;
-    aperture: number;
-    shutterSpeed: number;
-    sensitivity: number;
-    focusDistance: number;
-    eyeOcularDistance: number;
-    eyeToeIn: number;
-    projection: Camera$Projection;
-    enabled: boolean;
-    scaling: float2;
-    shift: float2;
-}
-
-export interface AnimationSettings {
-    enabled: boolean;
-    time: number;
-    speed: number;
-}
-
-export interface RenderSettings {
-    clearOptions: Renderer$ClearOptions;
-    frameRateOptions: any;
-}
-
-export interface ViewerOptions {
-    groundShadowStrength: number;
-    groundPlaneEnabled: boolean;
-    skyboxEnabled: boolean;
-    backgroundColor: float3;
-    autoScaleEnabled: boolean;
-    autoInstancingEnabled: boolean;
-}
-
-export interface DebugOptions {
-    skipFrames: number;
-}
-
-export interface viewer$Settings {
-    view: ViewSettings;
-    lighting: LightSettings;
-    viewer: ViewerOptions;
-    camera: CameraSettings;
-    animation: AnimationSettings;
-    render: RenderSettings;
-    debug: DebugOptions;
-}
-
-export interface ViewerContent {
-    view: View;
-    renderer: Renderer;
-    materials: MaterialInstance[];
-    lightManager: LightManager;
-    scene: Scene;
-    indirectLight: IndirectLight | null;
-    sunlight: Entity;
-    assetLights: Entity[];
-}
-
-export class JsonSerializer {
-    constructor();
-    writeJson(settings: viewer$Settings): string;
-    readJson(json: string, settings: viewer$Settings): boolean;
-}
-
-export class AutomationSpec {
-    static generate(json: string): AutomationSpec | null;
-    static generateDefaultTestCases(): AutomationSpec;
-    size(): number;
-    get(index: number, out: viewer$Settings): boolean;
-    getName(index: number): string;
-    delete(): void;
-}
-
-export interface AutomationEngine$Options {
-    sleepDuration: number;
-    minFrameCount: number;
-    verbose: boolean;
-    exportScreenshots: boolean;
-    exportSettings: boolean;
-    exportFormat: AutomationEngine$ExportFormat;
-}
-
-export class AutomationEngine {
-    constructor(spec: AutomationSpec, settings: viewer$Settings);
-    static createFromJSON(json: string): AutomationEngine | null;
-    static createDefault(): AutomationEngine;
-    startRunning(): void;
-    startBatchMode(): void;
-    tick(engine: Engine, content: ViewerContent, deltaTime: number): void;
-    applySettings(engine: Engine, json: string, content: ViewerContent): void;
-    getColorGrading(engine: Engine): ColorGrading;
-    getViewerOptions(): ViewerOptions;
-    getSettings(): viewer$Settings;
-    signalBatchMode(): void;
-    stopRunning(): void;
-    terminate(): void;
-    shouldClose(): boolean;
-    getOptions(): AutomationEngine$Options;
-    setOptions(options: AutomationEngine$Options): void;
-    isRunning(): boolean;
-    currentTest(): number;
-    testCount(): number;
-    getStatusMessage(): string;
-    delete(): void;
-}
-
-export class ViewerGui {
-    constructor(engine: Engine, scene: Scene, view: View, sidebarWidth: number);
-    renderUserInterface(timeStepInSeconds: number, guiView: View, pixelRatio: number): void;
-    getSettings(): viewer$Settings;
-    mouseEvent(mouseX: number, mouseY: number, mouseButton: boolean, mouseWheelY: number, control: boolean): void;
-    keyDownEvent(keyCode: number): void;
-    keyUpEvent(keyCode: number): void;
-    keyPressEvent(charCode: number): void;
-    delete(): void;
-}
+// ================================================================================================
+// DO NOT ADD MANUAL DECLARATIONS HERE!
+//
+// Everything in this section is generated by beamsplitter and will be OVERWRITTEN on next run.
+// All manual TypeScript additions must be placed in the upper hand-written section (above the
+// beamsplitter marker comment).
+// ================================================================================================

@@ -430,7 +430,12 @@ ViewerGui::ViewerGui(filament::Engine* engine, filament::Scene* scene, filament:
     mSettings.view.bloom.enabled = true;
 
     DebugRegistry& debug = mEngine->getDebugRegistry();
-    *debug.getPropertyAddress<bool>("d.stereo.combine_multiview_images") = true;
+    // The first Renderer the engine creates registers this property, and a ViewerGui can be
+    // built before any Renderer exists, in which case there is no address to write to.
+    if (bool* combineMultiviewImages =
+            debug.getPropertyAddress<bool>("d.stereo.combine_multiview_images")) {
+        *combineMultiviewImages = true;
+    }
 
     using namespace filament;
     LightManager::Builder(LightManager::Type::SUN)
@@ -724,6 +729,7 @@ void ViewerGui::updateUserInterface() {
         lm.setShadowCaster(instance, lcaster);
     };
 
+
     // Declare a std::function for tree nodes, it's an easy way to make a recursive lambda.
     std::function<void(utils::Entity)> treeNode;
 
@@ -979,33 +985,65 @@ void ViewerGui::updateUserInterface() {
             ImGui::Checkbox("Stable Shadows", &light.sunlight.shadowOptions.stable);
             ImGui::Checkbox("Enable LiSPSM", &light.sunlight.shadowOptions.lispsm);
 
-            int shadowType = (int)mSettings.view.shadowType;
-            ImGui::Combo("Shadow type", &shadowType, "PCF\0VSM\0DPCF\0PCSS\0PCFd\0\0");
-            mSettings.view.shadowType = (ShadowType)shadowType;
+            int shadowType = 0;
+            switch (mSettings.view.shadowType) {
+                default:
+                case ShadowType::PCF:  shadowType = 0; break;
+                case ShadowType::VSM:  shadowType = 1; break;
+                case ShadowType::DPCF: shadowType = 2; break;
+                case ShadowType::PCSS: shadowType = 2; break;
+                case ShadowType::PCFd: shadowType = 3; break;
+            }
+            ImGui::Combo("Shadow type", &shadowType, "PCF\0VSM\0PCSS\0PCFd\0\0");
+            switch (shadowType) {
+                default:
+                case 0: mSettings.view.shadowType = ShadowType::PCF; break;
+                case 1: mSettings.view.shadowType = ShadowType::VSM; break;
+                case 2: mSettings.view.shadowType = ShadowType::PCSS; break;
+                case 3: mSettings.view.shadowType = ShadowType::PCFd; break;
+            }
 
             if (mSettings.view.shadowType == ShadowType::VSM) {
+
+                ImGui::SeparatorText("Global EVSM Options");
+
+                // Per View VSM Options
                 ImGui::Checkbox("High precision", &mSettings.view.vsmShadowOptions.highPrecision);
-                ImGui::Checkbox("ELVSM", &mSettings.lighting.sunlight.shadowOptions.vsm.elvsm);
+                ImGui::Checkbox("EVSM4", &mSettings.lighting.sunlight.shadowOptions.vsm.elvsm);
                 char label[32];
                 snprintf(label, 32, "%d", 1 << mVsmMsaaSamplesLog2);
                 ImGui::SliderInt("VSM MSAA samples", &mVsmMsaaSamplesLog2, 0, 3, label);
-                mSettings.view.vsmShadowOptions.msaaSamples =
-                        static_cast<uint8_t>(1u << mVsmMsaaSamplesLog2);
-
+                mSettings.view.vsmShadowOptions.msaaSamples = static_cast<uint8_t>(1u << mVsmMsaaSamplesLog2);
+                ImGui::SliderFloat("VSM Light bleed", &mSettings.view.vsmShadowOptions.lightBleedReduction, 0.0, 1.0f);
                 int vsmAnisotropy = mSettings.view.vsmShadowOptions.anisotropy;
                 snprintf(label, 32, "%d", 1 << vsmAnisotropy);
                 ImGui::SliderInt("VSM anisotropy", &vsmAnisotropy, 0, 3, label);
                 mSettings.view.vsmShadowOptions.anisotropy = vsmAnisotropy;
                 ImGui::Checkbox("VSM mipmapping", &mSettings.view.vsmShadowOptions.mipmapping);
-                ImGui::SliderFloat("VSM blur", &light.sunlight.shadowOptions.vsm.blurWidth, 0.0f, 125.0f);
 
-                // These are not very useful in practice (defaults are good), but we keep them here for debugging
-                //ImGui::SliderFloat("VSM exponent", &mSettings.view.vsmShadowOptions.exponent, 0.0, 6.0f);
-                //ImGui::SliderFloat("VSM Light bleed", &mSettings.view.vsmShadowOptions.lightBleedReduction, 0.0, 1.0f);
-                //ImGui::SliderFloat("VSM min variance scale", &mSettings.view.vsmShadowOptions.minVarianceScale, 0.0, 10.0f);
-            } else if (mSettings.view.shadowType == ShadowType::DPCF || mSettings.view.shadowType == ShadowType::PCSS) {
-                ImGui::SliderFloat("Penumbra scale", &light.softShadowOptions.penumbraScale, 0.0f, 100.0f);
-                ImGui::SliderFloat("Penumbra Ratio scale", &light.softShadowOptions.penumbraRatioScale, 1.0f, 100.0f);
+                ImGui::SeparatorText("Sun Shadow Options");
+
+                // Per light (Sun) Shadow Options
+                ImGui::SliderFloat("VSM blur", &light.sunlight.shadowOptions.vsm.blurWidth, 0.0f, 125.0f);
+            } else if (mSettings.view.shadowType == ShadowType::PCSS || mSettings.view.shadowType == ShadowType::DPCF) {
+
+                ImGui::SeparatorText("Global EVSM Options");
+
+                // Per View VSM Options
+                ImGui::Checkbox("High precision", &mSettings.view.vsmShadowOptions.highPrecision);
+                char label[32];
+                snprintf(label, 32, "%d", 1 << mVsmMsaaSamplesLog2);
+                ImGui::SliderInt("VSM MSAA samples", &mVsmMsaaSamplesLog2, 0, 3, label);
+                mSettings.view.vsmShadowOptions.msaaSamples = static_cast<uint8_t>(1u << mVsmMsaaSamplesLog2);
+                ImGui::SliderFloat("VSM Light bleed", &mSettings.view.vsmShadowOptions.lightBleedReduction, 0.0, 1.0f);
+
+                ImGui::SeparatorText("Global Soft Shadow Options");
+
+                // Global Soft Shadow Options
+                ImGui::SliderFloat("Penumbra scale", &light.softShadowOptions.penumbraScale, 1.0f, 10.0f);
+                ImGui::SliderFloat("Penumbra ratio scale", &light.softShadowOptions.penumbraRatioScale, 1.0f, 50.0f);
+                ImGui::SliderFloat("Max penumbra ratio", &light.softShadowOptions.maxPenumbraRatio, 0.0f, 50.0f);
+                ImGui::SliderFloat("Max search radius", &light.softShadowOptions.maxSearchRadius, 0.0f, 10.0f);
             }
 
             int shadowCascades = light.sunlight.shadowOptions.shadowCascades;
@@ -1017,6 +1055,15 @@ void ViewerGui::updateUserInterface() {
             ImGui::SliderFloat("Split pos 1", &light.sunlight.shadowOptions.cascadeSplitPositions[1], 0.0f, 1.0f);
             ImGui::SliderFloat("Split pos 2", &light.sunlight.shadowOptions.cascadeSplitPositions[2], 0.0f, 1.0f);
             light.sunlight.shadowOptions.shadowCascades = shadowCascades;
+
+            // apply the sunlight shadow options ot all lights (because we don't have a per-light UI)
+            mScene->forEach([&](utils::Entity entity) {
+                if (lm.hasComponent(entity)) {
+                    auto i = lm.getInstance(entity);
+                    lm.setShadowOptions(i, mSettings.lighting.sunlight.shadowOptions);
+                }
+            });
+
         }
         ImGui::Unindent();
     }
@@ -1072,7 +1119,11 @@ void ViewerGui::updateUserInterface() {
         ImGui::Checkbox("Show skybox", &mSettings.viewer.skyboxEnabled);
         ImGui::ColorEdit3("Background color", &mSettings.viewer.backgroundColor.r);
 
-        ImGui::SliderFloat("Frame rate", &mSettings.viewer.cameraFrameRate, 0.0f, 120.0f, "%.0f Hz");
+        // we don't have a way to report the real value of SwapChain::isFrameRateChangeSupported(),
+        // for now we assume it's supported in remote mode only
+        if (isRemoteMode()) {
+            ImGui::SliderFloat("Frame rate", &mSettings.viewer.cameraFrameRate, 0.0f, 120.0f, "%.0f Hz");
+        }
 
         // We do not yet support ground shadow or scene selection in remote mode.
         if (!isRemoteMode()) {
@@ -1168,8 +1219,10 @@ void ViewerGui::updateUserInterface() {
         ImGui::Checkbox("Stereo mode", &mSettings.view.stereoscopicOptions.enabled);
 #if defined(FILAMENT_SAMPLES_STEREO_TYPE_MULTIVIEW)
         ImGui::Indent();
-        ImGui::Checkbox("Combine Multiview Images",
-                debug.getPropertyAddress<bool>("d.stereo.combine_multiview_images"));
+        if (bool* combineMultiviewImages =
+                debug.getPropertyAddress<bool>("d.stereo.combine_multiview_images")) {
+            ImGui::Checkbox("Combine Multiview Images", combineMultiviewImages);
+        }
         ImGui::Unindent();
 #endif
         ImGui::SliderFloat("Ocular distance", &mSettings.camera.eyeOcularDistance, 0.0f, 1.0f);
@@ -1186,6 +1239,28 @@ void ViewerGui::updateUserInterface() {
         mSettings.debug.skipFrames = 0;
         if (ImGui::Button("Skip 10 frames")) {
             mSettings.debug.skipFrames = 10;
+        }
+
+        ImGui::Checkbox("Frame step", &mSettings.debug.frameStep);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Freezes the image (and animation time) until stepped, so each "
+                              "frame produced by effects like TAA can be inspected on its own.");
+        }
+        if (mSettings.debug.frameStep) {
+            // While stepping, the window keeps showing the last frame that was actually
+            // rendered -- including this UI, which is why the button below stays clickable even
+            // though nothing is being redrawn. ImGui still processes input every iteration; only
+            // presentation is paused.
+            bool step = ImGui::Button("Step one frame");
+            // Space is the convenient way to do it, but must not steal the key from a text field.
+            step = step || (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Space));
+            if (step) {
+                mSettings.debug.frameStepRequested = true;
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("(or space)");
+            ImGui::SliderFloat("Step size (seconds)",
+                    &mSettings.debug.frameStepDeltaSeconds, 0.0f, 1.0f / 15.0f, "%.4f");
         }
     }
 
@@ -1211,7 +1286,9 @@ void ViewerGui::updateUserInterface() {
     // TODO(prideout): add support for hierarchy, animation and variant selection in remote mode. To
     // support these features, we will need to send a message (list of strings) from DebugServer to
     // the WebSockets client.
-    if (!isRemoteMode()) {
+    //
+    // setAsset accepts a null instance, which the Animator deref below does not survive.
+    if (!isRemoteMode() && mInstance) {
         if (ImGui::CollapsingHeader("Hierarchy")) {
             ImGui::Indent();
             ImGui::Checkbox("Show bounds", &mEnableWireframe);

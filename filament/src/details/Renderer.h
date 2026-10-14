@@ -18,6 +18,7 @@
 #define TNT_FILAMENT_DETAILS_RENDERER_H
 
 #include "Allocators.h"
+#include "BufferStuffingDetector.h"
 #include "downcast.h"
 #include "FrameInfo.h"
 #include "FrameSkipper.h"
@@ -74,6 +75,10 @@ class FRenderer : public Renderer {
     static constexpr unsigned MAX_FRAMETIME_HISTORY = 32u;
 
 public:
+    // The FrameGraph arena size only depends on how the FrameGraph is used. Currently, 512 KiB handles the most
+    // complex graph Renderer can produce.
+    static constexpr size_t FRAMEGRAPH_ARENA_SIZE = 512 * 1024;
+
     explicit FRenderer(FEngine& engine);
 
     ~FRenderer() noexcept;
@@ -84,7 +89,11 @@ public:
 
     math::float4 getShaderUserTime() const { return mShaderUserTime; }
 
-    void resetUserTime();
+    void setMaterialTimeEpoch(int64_t monotonic_clock_ns);
+    void setMaterialTimeEpoch(std::chrono::steady_clock::time_point monotonic_clock);
+    inline void resetUserTime() {
+        setMaterialTimeEpoch(clock::now());
+    }
 
     void skipNextFrames(size_t frameCount) noexcept {
         mFrameSkipper.skipNextFrames(frameCount);
@@ -93,6 +102,10 @@ public:
     size_t getFrameToSkipCount() const noexcept {
         return mFrameSkipper.getFrameToSkipCount();
     }
+
+    bool hasGpuFallenBehind() const noexcept;
+
+    void pauseRenderThread(uint64_t duration_ns);
 
     // renders a single standalone view. The view must have a a custom rendertarget.
     void renderStandaloneView(FView const* view);
@@ -103,6 +116,7 @@ public:
     void setDesiredPresentationTime(std::chrono::steady_clock::time_point monotonic_clock) noexcept;
     void setRenderingDeadline(int64_t monotonic_clock_ns) noexcept;
     void setRenderingDeadline(std::chrono::steady_clock::time_point monotonic_clock) noexcept;
+    void setFrameScheduleTime(std::chrono::steady_clock::time_point time) noexcept;
 
     void setVsyncTime(uint64_t steadyClockTimeNano) noexcept;
 
@@ -195,7 +209,7 @@ private:
     backend::TextureFormat getLdrFormat(bool translucent) const noexcept;
 
     Epoch getUserEpoch() const { return mUserEpoch; }
-    double getUserTime() const noexcept {
+    double getMaterialTime() const noexcept {
         duration const d = clock::now() - getUserEpoch();
         // convert the duration (whatever it is) to a duration in seconds encoded as double
         return std::chrono::duration<double>(d).count();
@@ -213,7 +227,7 @@ private:
     }
 
     void renderInternal(backend::DriverApi& driver, FView const* view, bool flush);
-    void renderJob(backend::DriverApi& driver, RootArenaScope& rootArenaScope, FView& view);
+    void renderJob(backend::DriverApi& driver, LinearAllocatorArena& arena, FView& view);
 
     static std::pair<float, math::float2> prepareUpscaler(math::float2 scale,
             TemporalAntiAliasingOptions const& taaOptions,
@@ -226,6 +240,7 @@ private:
     FSwapChain* mSwapChain = nullptr;
     size_t mCommandsHighWatermark = 0;
     uint32_t mFrameId = 1; // id 0 is reserved for standalone views
+    uint32_t mLastSubmittedFrameId = 1;
     FrameInfoManager mFrameInfoManager;
 #if FILAMENT_LOG_FRAME_INFO
     FrameHistoryStream mFrameHistoryStream;
@@ -238,6 +253,7 @@ private:
     bool mIsFrameBufferFetchSupported : 1;
     bool mIsFrameBufferFetchMultiSampleSupported : 1;
     bool mIsAutoDepthResolveSupported : 1;
+    bool mIsPresentationTimeSupported : 1;
     Epoch mUserEpoch;
     math::float4 mShaderUserTime{};
     DisplayInfo mDisplayInfo;
@@ -251,8 +267,9 @@ private:
     std::chrono::steady_clock::time_point mRenderingDeadline{};
     std::chrono::steady_clock::time_point mPresentationTime{};
     std::chrono::steady_clock::time_point mDesiredPresentationTime{};
+    std::chrono::steady_clock::time_point mFrameScheduleTime{};
     std::unique_ptr<TextureCache> mResourceAllocator{};
-    int64_t mLastFrameId = -1;
+    mutable BufferStuffingDetector mBufferStuffingDetector;
 };
 
 FILAMENT_DOWNCAST(Renderer)

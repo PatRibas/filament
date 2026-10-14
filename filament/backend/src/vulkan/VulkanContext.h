@@ -71,6 +71,27 @@ struct VulkanRenderPassContext {
 // context are stored in VulkanPlatform.
 struct VulkanContext {
 public:
+    class DebugUtils {
+    public:
+        DebugUtils() = default;
+        ~DebugUtils() = default;
+
+        void init(VkInstance instance, VkDevice device, bool enabled);
+        void terminate();
+
+        void setName(VkObjectType type, uint64_t handle, char const* name) const;
+
+        inline bool isEnabled() const noexcept { return mDevice != VK_NULL_HANDLE; }
+
+    private:
+        VkInstance mInstance = VK_NULL_HANDLE;
+        VkDevice mDevice = VK_NULL_HANDLE;
+        VkDebugUtilsMessengerEXT mDebugMessenger = VK_NULL_HANDLE;
+    };
+
+    inline DebugUtils const& getDebugUtils() const noexcept { return mDebugUtils; }
+    inline DebugUtils& getDebugUtils() noexcept { return mDebugUtils; }
+
     static uint32_t selectMemoryType(VkPhysicalDeviceMemoryProperties const& memoryProperties,
             uint32_t types, VkFlags reqs) {
         for (uint32_t i = 0; i < VK_MAX_MEMORY_TYPES; i++) {
@@ -156,9 +177,11 @@ public:
         return mDebugMarkersSupported;
     }
 
-    inline bool isDebugUtilsSupported() const noexcept {
-        return mDebugUtilsSupported;
-    }
+    inline bool isDebugUtilsEnabled() const noexcept { return mDebugUtilsEnabled; }
+
+    inline bool isDebugUtilsNamesEnabled() const noexcept { return mDebugUtilsNamesEnabled; }
+
+    inline bool isRenderDocCaptureEnabled() const noexcept { return mRenderDocCaptureEnabled; }
 
     inline bool isDynamicRenderingSupported() const noexcept {
         return mDynamicRenderingFeatures.dynamicRendering == VK_TRUE;
@@ -189,7 +212,19 @@ public:
     }
 
     inline bool isVertexInputDynamicStateSupported() const noexcept {
-        return mVertexInputDynamicStateSupported;
+        return mVertexInputDynamicStateFeatures.vertexInputDynamicState == VK_TRUE;
+    }
+
+    inline bool isExtendedDynamicStateSupported() const noexcept {
+        return mExtendedDynamicStateFeatures.extendedDynamicState == VK_TRUE;
+    }
+
+    inline bool isExtendedDynamicState2Supported() const noexcept {
+        return mExtendedDynamicState2Features.extendedDynamicState2 == VK_TRUE;
+    }
+
+    inline bool isColorWriteEnableSupported() const noexcept {
+        return mColorWriteEnableFeatures.colorWriteEnable == VK_TRUE;
     }
 
     inline bool pipelineCreationFeedbackSupported() const noexcept {
@@ -215,11 +250,19 @@ public:
                isDynamicRenderingSupported();
     }
 
+    inline bool isPipelineDynamicStateEnabled() const noexcept {
+        return mPipelineDynamicStateEnabled;
+    }
+
     inline bool isGlobalPrioritySupported() const noexcept {
         return mGlobalPrioritySupported;
     }
 
     inline bool isDriverPropertiesSupported() const noexcept { return mDriverPropertiesSupported; }
+
+    inline bool isGoogleDisplayTimingEnabled() const noexcept {
+        return mGoogleDisplayTimingEnabled;
+    }
 
 private:
     VkPhysicalDeviceMemoryProperties mMemoryProperties = {};
@@ -245,30 +288,48 @@ private:
         // non-conformant vulkan implementation).
         .imageView2DOn3DImage = VK_TRUE,
     };
-
+    VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT mVertexInputDynamicStateFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,
+    };
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT mExtendedDynamicStateFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT,
+    };
+    VkPhysicalDeviceExtendedDynamicState2FeaturesEXT mExtendedDynamicState2Features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT,
+    };
+    VkPhysicalDeviceColorWriteEnableFeaturesEXT mColorWriteEnableFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COLOR_WRITE_ENABLE_FEATURES_EXT,
+    };
     VkExternalFenceHandleTypeFlags mFenceExportFlags = {};
 
     // These are options that are either supported or not supported in the current
     // device and instance.
     bool mDebugMarkersSupported = false;
-    bool mDebugUtilsSupported = false;
+    bool mDebugUtilsEnabled = false;
+    bool mDebugUtilsNamesEnabled = false;
+    bool mRenderDocCaptureEnabled = false;
     bool mIsUnifiedMemoryArchitecture = false;
     bool mLazilyAllocatedMemorySupported = false;
     bool mPipelineCreationFeedbackSupported = false;
     bool mProtectedMemorySupported = false;
-    bool mVertexInputDynamicStateSupported = false;
     bool mGlobalPrioritySupported = false;
     bool mDriverPropertiesSupported = false;
+
+    // VK_GOOGLE_display_timing device extension
+    bool mGoogleDisplayTimingEnabled = false;
 
     // These are options that can be enabled or disabled at an application level.
     bool mAsyncPipelineCachePrewarmingEnabled = false;
     bool mParallelShaderCompileDisabled = false;
     bool mStagingBufferBypassEnabled = false;
+    bool mPipelineDynamicStateEnabled = false;
 
     fvkutils::VkFormatList mDepthStencilFormats;
     fvkutils::VkFormatList mBlittableDepthStencilFormats;
 
     std::vector<VulkanPlatform::ExternalYcbcrFormat> mPipelineCachePrewarmExternalFormats;
+
+    DebugUtils mDebugUtils;
 
     // For convenience so that VulkanPlatform can initialize the private fields.
     friend class VulkanPlatform;

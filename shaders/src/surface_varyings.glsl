@@ -12,7 +12,11 @@ LAYOUT_LOCATION(5) VARYING highp vec2 vertex_uv01;
 LAYOUT_LOCATION(5) VARYING highp vec4 vertex_uv01;
 #endif
 
+#if defined(VARIANT_HAS_MNT)
+LAYOUT_LOCATION(6) centroid VARYING highp vec4 vertex_worldPosition;
+#else
 LAYOUT_LOCATION(6) VARYING highp vec4 vertex_worldPosition;
+#endif
 
 #if defined(HAS_ATTRIBUTE_TANGENTS)
 LAYOUT_LOCATION(7) SHADING_INTERPOLATION VARYING mediump vec3 vertex_worldNormal;
@@ -28,7 +32,7 @@ LAYOUT_LOCATION(10) flat VARYING highp int instance_index;
 highp int logical_instance_index;
 #endif
 
-#if defined(VARIANT_HAS_SHADOWING) && defined(VARIANT_HAS_DIRECTIONAL_LIGHTING)
+#if defined(VARIANT_HAS_SHADOWING) && defined(MATERIAL_HAS_LIGHTING)
 LAYOUT_LOCATION(11) VARYING highp vec4 vertex_lightSpacePosition;
 #endif
 

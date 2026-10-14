@@ -118,9 +118,12 @@ public:
 
     // note: viewport/cameraInfo are passed by value to make it clear that prepare cannot
     // keep references on them that would outlive the scope of prepare() (e.g. with JobSystem).
-    void prepare(FEngine& engine, backend::DriverApi& driver, RootArenaScope& rootArenaScope,
+    void prepare(FEngine& engine, backend::DriverApi& driver, LinearAllocatorArena& arena,
             Viewport viewport, CameraInfo cameraInfo,
             math::float4 const& userTime, bool needsAlphaChannel) noexcept;
+
+    // call at the end of frame rendering to free per-frame data
+    void finish(LinearAllocatorArena& arena);
 
     void setScene(FScene* scene);
     FScene const* getScene() const noexcept { return mScene; }
@@ -194,18 +197,19 @@ public:
     void prepareShadowMapping(FEngine const& engine, backend::Handle<backend::HwTexture> structure) const noexcept;
     void prepareShadowMapping() const noexcept;
 
-    void commitFroxels(backend::DriverApi& driverApi) const noexcept;
+    void commitFroxels(backend::DriverApi& driverApi, LinearAllocatorArena& arena) const noexcept;
     void commitUniforms(backend::DriverApi& driver) const noexcept;
     void commitDescriptorSet(backend::DriverApi& driver) const noexcept;
 
     utils::JobSystem::Job* getFroxelizerSync() const noexcept { return mFroxelizerSync; }
     void setFroxelizerSync(utils::JobSystem::Job* sync) noexcept { mFroxelizerSync = sync; }
 
-    // ultimately decides to use the DIR variant
+    // ultimately decides the directional-lighting specialization constant
     bool hasDirectionalLighting() const noexcept { return mHasDirectionalLighting; }
 
-    // ultimately decides to use the DYN variant
+    // ultimately decides the dynamic-lighting specialization constant
     bool hasDynamicLighting() const noexcept { return mHasDynamicLighting; }
+    bool hasExtraDirectionalLights() const noexcept { return mHasExtraDirectionalLights; }
 
     // ultimately decides to use the SRE variant
     bool hasShadowing() const noexcept { return mHasShadowing; }
@@ -215,8 +219,7 @@ public:
     bool needsShadowMap() const noexcept { return mNeedsShadowMap; }
     bool hasFog() const noexcept { return mFogOptions.enabled && mFogOptions.density > 0.0f; }
     bool hasVSM() const noexcept { return mShadowType == ShadowType::VSM; }
-    bool hasDPCF() const noexcept { return mShadowType == ShadowType::DPCF; }
-    bool hasPCSS() const noexcept { return mShadowType == ShadowType::PCSS; }
+    bool hasPCSS() const noexcept { return mShadowType == ShadowType::PCSS || mShadowType == ShadowType::DPCF; }
     bool hasPicking() const noexcept { return mActivePickingQueriesList != nullptr; }
     bool hasStereo() const noexcept {
         return mIsStereoSupported && mStereoscopicOptions.enabled;
@@ -670,8 +673,10 @@ private:
     Range mSpotLightShadowCasters;
     int32_t mVisibleRenderableCount = -1;
     uint32_t mRenderableUBOElementCount = 0;
+    utils::Slice<float> mDistancesBuffer{};
     mutable bool mHasDirectionalLighting = false;
     mutable bool mHasDynamicLighting = false;
+    mutable bool mHasExtraDirectionalLights = false;
     mutable bool mHasShadowing = false;
     mutable bool mNeedsShadowMap = false;
 

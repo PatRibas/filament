@@ -27,11 +27,28 @@ using namespace utils;
 
 JobQueue::JobQueue(PassKey) {}
 
+JobQueue::~JobQueue() {
+#ifndef NDEBUG
+    // Nothing can consume an id anymore, so a placeholder that is still empty is an id that
+    // `issueJobId()` handed out and that was never pushed nor canceled -- typically an
+    // `...AsyncS()` whose `...AsyncR()` doesn't push the job with the id it was given. It has been
+    // sitting in `mJobsMap` for the whole life of the queue.
+    for (auto const& entry : mJobsMap) {
+        assert_invariant(static_cast<bool>(entry.second)
+                && "a job id was issued but its job was never pushed nor canceled");
+    }
+#endif
+}
+
 JobQueue::JobId JobQueue::push(Job job, JobId const preIssuedJobId/* = InvalidJobId*/) {
     JobId jobId = preIssuedJobId;
     {
         LockGuard const lock(mQueueMutex);
-        if (mIsStopping) {
+        if (UTILS_UNLIKELY(mIsStopping)) {
+            // This queue is stopping, so any placeholder previously issued should be removed here.
+            if (jobId != InvalidJobId) {
+                mJobsMap.erase(jobId);
+            }
             return InvalidJobId;
         }
 
@@ -143,14 +160,22 @@ JobQueue::JobId JobQueue::issueJobId() noexcept {
 }
 
 bool JobQueue::cancel(JobId const jobId) noexcept {
-    LockGuard const lock(mQueueMutex);
+    // The canceled job is moved out of the map here and destroyed once the lock is released below.
+    // Destroying a job runs arbitrary user code (e.g. the release callback of a captured
+    // BufferDescriptor), which must not run while `mQueueMutex` is held: `mQueueMutex` is not
+    // recursive, so a callback calling back into this queue would deadlock.
+    Job job;
+    {
+        LockGuard const lock(mQueueMutex);
 
-    auto it = mJobsMap.find(jobId);
-    if (it == mJobsMap.end()) {
-        return false; // Job not found, must have been completed or canceled.
+        auto it = mJobsMap.find(jobId);
+        if (it == mJobsMap.end()) {
+            return false; // Job not found, must have been completed or canceled.
+        }
+
+        job = std::move(it->second);
+        mJobsMap.erase(it);
     }
-
-    mJobsMap.erase(it);
 
     return true;
 }
@@ -161,6 +186,11 @@ void JobQueue::stop() noexcept {
         mIsStopping = true;
     }
     mQueueCondition.notify_all(); // Wake up all waiting threads
+}
+
+bool JobQueue::empty() const noexcept {
+    LockGuard const lock(mQueueMutex);
+    return mJobOrder.empty();
 }
 
 JobQueue::JobId JobQueue::genNextJobId() noexcept {
@@ -212,11 +242,21 @@ void AmortizationWorker::process(int const jobCount) {
     }
 }
 
+void AmortizationWorker::drain() {
+    if (!mQueue) {
+        return;
+    }
+
+    while (!mQueue->empty()) {
+        process(-1);
+    }
+}
+
 void AmortizationWorker::terminate() {
     JobWorker::terminate();
 
     // Drain all pending jobs.
-    process(-1);
+    drain();
 }
 
 ThreadWorker::ThreadWorker(JobQueue::Ptr queue, Config config, PassKey)
@@ -239,7 +279,37 @@ ThreadWorker::ThreadWorker(JobQueue::Ptr queue, Config config, PassKey)
     });
 }
 
-ThreadWorker::~ThreadWorker() = default;
+ThreadWorker::~ThreadWorker() {
+    // Destroying a worker without calling `terminate()` first is a programming error.
+    assert_invariant(!mThread.joinable());
+}
+
+void ThreadWorker::drain() {
+    if (!mQueue) {
+        return;
+    }
+
+    assert_invariant(std::this_thread::get_id() != mThread.get_id());
+
+    struct DrainFence {
+        utils::Mutex mutex;
+        utils::Condition condition;
+        bool done = false;
+    } fence;
+
+    JobQueue::JobId const id = mQueue->push([&fence]() {
+        utils::LockGuard const lock(fence.mutex);
+        fence.done = true;
+        fence.condition.notify_one();
+    });
+
+    if (id == JobQueue::InvalidJobId) {
+        return;
+    }
+
+    utils::UniqueLock lock(fence.mutex);
+    fence.condition.wait(lock, [&fence]() { return fence.done; });
+}
 
 void ThreadWorker::terminate() {
     JobWorker::terminate();

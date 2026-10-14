@@ -41,7 +41,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(FILAMENT_DEBUG_MUTEX) || defined(UTILS_DEBUG_MUTEX)
+#define HandleAllocatorGL   HandleAllocator<32,  96, 312>
+#else
 #define HandleAllocatorGL   HandleAllocator<32,  96, 184>    // ~4520 / pool / MiB
+#endif
 #define HandleAllocatorVK   HandleAllocator<64, 160, 312>    // ~1820 / pool / MiB
 #define HandleAllocatorMTL  HandleAllocator<32,  64, 552>    // ~1660 / pool / MiB
 // TODO WebGPU examine right size of handles
@@ -71,6 +75,8 @@ private:
 template<size_t P0, size_t P1, size_t P2>
 class HandleAllocator : public DebugTag {
 public:
+    static constexpr size_t bucketSizesSum = P0 + P1 + P2;
+
     HandleAllocator(const char* name, size_t size);
     HandleAllocator(const char* name, size_t size,
             bool disableUseAfterFreeCheck, bool disableHeapHandleTags);

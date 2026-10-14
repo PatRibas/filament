@@ -113,9 +113,9 @@ BuilderType::Builder::Builder(Builder&& rhs) noexcept = default;
 BuilderType::Builder& BuilderType::Builder::operator=(Builder const& rhs) noexcept = default;
 BuilderType::Builder& BuilderType::Builder::operator=(Builder&& rhs) noexcept = default;
 
-Material::Builder& Material::Builder::package(const void* payload, size_t const size) {
-    mImpl->mPayload = payload;
-    mImpl->mSize = size;
+Material::Builder& Material::Builder::package(utils::Slice<const uint8_t> payload) {
+    mImpl->mPayload = payload.data();
+    mImpl->mSize = payload.size();
     return *this;
 }
 
@@ -188,7 +188,6 @@ FMaterial::FMaterial(FEngine& engine, const Builder& builder, MaterialDefinition
 
     mDepthPrecacheDisabled =
             driver.isWorkaroundNeeded(Workaround::DISABLE_DEPTH_PRECACHE_FOR_DEFAULT_MATERIAL);
-    mDefaultMaterial = engine.getDefaultMaterial();
 
     mPrograms.initializeForMaterial(engine, *this, processSpecializationConstants(builder));
 
@@ -196,7 +195,7 @@ FMaterial::FMaterial(FEngine& engine, const Builder& builder, MaterialDefinition
     // Register the material with matdbg.
     matdbg::DebugServer* server = downcast(engine).debug.server;
     if (UTILS_UNLIKELY(server)) {
-        auto const details = builder.mImpl;
+        auto const& details = builder.mImpl;
         mDebuggerId = server->addMaterial(mDefinition.name, details->mPayload, details->mSize, this);
     }
 #endif
@@ -231,18 +230,17 @@ void FMaterial::terminate(FEngine& engine) {
 #endif
 
     mPrograms.terminate(engine);
+
+    engine.getMaterialCache().releaseMaterial(engine, mDefinition);
 }
 
 filament::DescriptorSetLayout const& FMaterial::getPerViewDescriptorSetLayout(
         Variant const variant, bool const useVsmDescriptorSetLayout) const noexcept {
-    if (mDefinition.materialDomain == MaterialDomain::SURFACE) {
-        // `variant` is only sensical for MaterialDomain::SURFACE
-        if (Variant::isValidDepthVariant(variant)) {
-            return mEngine.getPerViewDescriptorSetLayoutDepthVariant();
-        }
-        if (Variant::isSSRVariant(variant)) {
-            return mEngine.getPerViewDescriptorSetLayoutSsrVariant();
-        }
+    if (mDefinition.isValidDepthVariant(variant)) {
+        return mEngine.getPerViewDescriptorSetLayoutDepthVariant();
+    }
+    if (mDefinition.isSSRVariant(variant)) {
+        return mEngine.getPerViewDescriptorSetLayoutSsrVariant();
     }
     // mDefinition.perViewDescriptorSetLayout{Vsm} is already resolved for MaterialDomain
     if (useVsmDescriptorSetLayout) {
@@ -368,8 +366,7 @@ FMaterialInstance* FMaterial::createInstance(const char* name) const noexcept {
 
 FMaterialInstance* FMaterial::getDefaultInstance() noexcept {
     if (UTILS_UNLIKELY(!mDefaultMaterialInstance)) {
-        mDefaultMaterialInstance =
-                mEngine.createMaterialInstance(this, mDefinition.name.c_str());
+        mDefaultMaterialInstance = mEngine.createMaterialInstance(this, mDefinition.name.c_str());
         mDefaultMaterialInstance->setDefaultInstance(true);
     }
     return mDefaultMaterialInstance;

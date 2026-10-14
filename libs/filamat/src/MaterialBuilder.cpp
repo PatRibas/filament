@@ -340,6 +340,8 @@ MaterialBuilder& MaterialBuilder::constant(const char* name, ConstantType const 
         FILAMENT_CHECK_POSTCONDITION(type == ConstantType::BOOL)
                 << "Constant " << name << " was declared with type " << toString(type)
                 << " but given a bool default value.";
+        // Zero-initialize the union to prevent garbage values.
+        constant.defaultValue.i = 0;
         constant.defaultValue.b = defaultValue;
     } else {
         assert_invariant(false);
@@ -676,6 +678,9 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
         auto const& param = mParameters[i];
         assert_invariant(!param.isSubpass());
         if (param.isSampler()) {
+            FILAMENT_CHECK_PRECONDITION(binding < filament::backend::MAX_DESCRIPTOR_COUNT)
+                    << "Exceeded maximum number of descriptor bindings ("
+                    << filament::backend::MAX_DESCRIPTOR_COUNT << ").";
             ShaderStageFlags const stages = param.stages.value_or(defaultShaderStages);
             sbb.add({ param.name.data(), param.name.size() }, binding, param.samplerType,
                     param.format, param.precision, param.filterable, param.multisample,
@@ -1052,19 +1057,18 @@ bool MaterialBuilder::generateShaders(JobSystem& jobSystem, const std::vector<Va
         const bool targetApiNeedsWgsl = targetApi == TargetApi::WEBGPU;
         const bool targetApiNeedsGlsl = targetApi == TargetApi::OPENGL;
 
+        const bool isSurfaceDomain = mMaterialDomain == MaterialDomain::SURFACE;
+
         // Set when a job fails
         JobSystem::Job* parent = jobSystem.createJob();
 
         for (const auto& v : variants) {
-            if (params.featureLevel == FeatureLevel::FEATURE_LEVEL_0) {
+            if (params.featureLevel == FeatureLevel::FEATURE_LEVEL_0 && isSurfaceDomain) {
                 assert_invariant(params.shaderModel == ShaderModel::MOBILE);
                 assert_invariant(params.targetApi == TargetApi::OPENGL);
                 // skip all variants that can't be used with ESSL1
                 if (filament::Variant::isValidStandardVariant(v.variant)) {
                     if (v.variant.hasDirectionalLighting()) {
-                        continue;
-                    }
-                    if (v.variant.hasDynamicLighting()) {
                         continue;
                     }
                 }
@@ -1176,7 +1180,8 @@ bool MaterialBuilder::generateShaders(JobSystem& jobSystem, const std::vector<Va
                         .domain = mMaterialDomain,
                         .materialInfo = &info,
                         .hasFramebufferFetch = mEnableFramebufferFetch,
-                        .usesClipDistance = v.variant.hasStereo() && info.stereoscopicType == StereoscopicType::INSTANCED,
+                        .usesClipDistance = isSurfaceDomain && v.variant.hasStereo() &&
+                                info.stereoscopicType == StereoscopicType::INSTANCED,
                         .glsl = {},
                 };
 

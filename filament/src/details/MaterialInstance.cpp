@@ -506,19 +506,17 @@ void FMaterialInstance::compile(CompilerPriorityQueue const priority,
     if (UTILS_LIKELY(driver.isParallelShaderCompileSupported())) {
         for (auto const variant: definition.getVariants()) {
             // The variant is filtered by the user, skip it.
-            if (variantFilter && variant != Variant::filterUserVariant(variant, variantFilter))
+            if (variantFilter && variant != definition.filterUserVariant(variant, variantFilter))
                 continue;
 
-            for (auto specKey: DynamicSpecConstKey::getAllPossibleKeys()) {
+            for (auto const specKey:
+                    DynamicSpecConstKey::getValidKeys(variant, materialDomain, isMaterialLit)) {
                 // Although certain variant bits were migrated to specialization constants, we
                 // still evaluate them against the variant filter mask to prune unnecessary
                 // shader permutations from the compilation queue.
                 if (variantFilter &&
                         specKey != DynamicSpecConstKey::filterUserVariant(specKey, variantFilter))
                     continue;
-
-                specKey = DynamicSpecConstKey::filterProgramSpecKey(variant, specKey,
-                        materialDomain, isMaterialLit);
 
                 if (definition.isValidProgram(variant, specKey, shaderModel, isStereoSupported)) {
 #ifndef NDEBUG
@@ -545,11 +543,11 @@ void FMaterialInstance::compile(CompilerPriorityQueue const priority,
 #ifndef NDEBUG
     } else {
         for (UTILS_UNUSED_WITHOUT_TRACING auto const variant: definition.getVariants()) {
-            if (variantFilter && variant != Variant::filterUserVariant(variant, variantFilter))
+            if (variantFilter && variant != definition.filterUserVariant(variant, variantFilter))
                 continue;
 
             for (UTILS_UNUSED_WITHOUT_TRACING auto const specKey:
-                    DynamicSpecConstKey::getAllPossibleKeys()) {
+                    DynamicSpecConstKey::getValidKeys(variant, materialDomain, isMaterialLit)) {
                 if (variantFilter &&
                         specKey != DynamicSpecConstKey::filterUserVariant(specKey, variantFilter))
                     continue;
@@ -700,9 +698,11 @@ void FMaterialInstance::flushSpecializationConstants() const noexcept {
     }
 
     if (!mPrograms.isInitialized()) {
-        mPrograms.initializeForMaterialInstance(mMaterial->getEngine(), *mMaterial);
+        mPrograms.initializeForMaterial(mMaterial->getEngine(), *mMaterial,
+                std::move(mPendingSpecializationConstants));
+    } else {
+        mPrograms.setConstants(std::move(mPendingSpecializationConstants));
     }
-    mPrograms.setConstants(std::move(mPendingSpecializationConstants));
     mPendingSpecializationConstants.clear();
 }
 

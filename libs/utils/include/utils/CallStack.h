@@ -19,6 +19,7 @@
 
 #include <utils/compiler.h>
 #include <utils/CString.h>
+#include <utils/sstream.h>
 
 #include <typeinfo>
 
@@ -89,6 +90,14 @@ public:
      */
     friend io::ostream& operator <<(io::ostream& stream, const CallStack& callstack);
 
+    // make Callstack compatible with Abseil's stringification utilities
+    template<typename Sink>
+    friend void AbslStringify(Sink& sink, CallStack const& callstack) {
+        utils::io::sstream stream;
+        stream << callstack;
+        sink.Append(std::string_view(stream.c_str(), stream.length()));
+    }
+
     bool operator <(const CallStack& rhs) const;
 
     bool operator >(const CallStack& rhs) const {
@@ -123,7 +132,7 @@ private:
     };
 
     size_t m_frame_count = 0;
-    StackFrameInfo m_stack[NUM_FRAMES];
+    StackFrameInfo m_stack[NUM_FRAMES] = {};
 };
 
 } // namespace utils

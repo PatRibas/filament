@@ -21,6 +21,7 @@
 #include "MetalUtils.h"
 
 #include <utils/Logger.h>
+#include <utils/Mutex.h>
 #include <utils/Panic.h>
 
 namespace filament::backend {
@@ -122,6 +123,20 @@ void MetalBlitter::blit(id<MTLCommandBuffer> cmdBuffer, const BlitArgs& args, co
     if (blitFastPath(cmdBuffer, args, label)) {
         return;
     }
+
+    FILAMENT_CHECK_PRECONDITION(!isMetalFormatDepth(args.source.texture.pixelFormat) &&
+                                !isMetalFormatDepth(args.destination.texture.pixelFormat))
+            << "MetalBlitter slow path does not support depth formats. Fast path failed due to "
+               "mismatch: "
+            << "sampleCount (src=" << args.source.texture.sampleCount
+            << ", dst=" << args.destination.texture.sampleCount << "), "
+            << "pixelFormat (src=" << (uint32_t) args.source.texture.pixelFormat
+            << ", dst=" << (uint32_t) args.destination.texture.pixelFormat << "), "
+            << "region size (src=" << args.source.region.size.width << "x"
+            << args.source.region.size.height << "x" << args.source.region.size.depth
+            << ", dst=" << args.destination.region.size.width << "x"
+            << args.destination.region.size.height << "x" << args.destination.region.size.depth
+            << ").";
 
     // If we end-up here, it means that either:
     // - we're resolving a color texture
@@ -299,6 +314,7 @@ void MetalBlitter::blitDepthPlane(id<MTLCommandBuffer> cmdBuffer, const BlitArgs
 }
 
 void MetalBlitter::shutdown() noexcept {
+    utils::LockGuard const lock(mLock);
     mBlitFunctions.clear();
     mVertexFunction = nil;
 }
@@ -362,8 +378,11 @@ id<MTLFunction> MetalBlitter::compileFragmentFunction(BlitFunctionKey key) const
 }
 
 id<MTLFunction> MetalBlitter::getBlitVertexFunction() {
-    if (mVertexFunction != nil) {
-        return mVertexFunction;
+    {
+        utils::LockGuard const lock(mLock);
+        if (mVertexFunction != nil) {
+            return mVertexFunction;
+        }
     }
 
     MTLCompileOptions* const options = [MTLCompileOptions new];
@@ -392,22 +411,30 @@ id<MTLFunction> MetalBlitter::getBlitVertexFunction() {
     FILAMENT_CHECK_POSTCONDITION(library && function)
             << "Unable to compile vertex shader for MetalBlitter.";
 
-    mVertexFunction = function;
+    utils::LockGuard const lock(mLock);
+    if (mVertexFunction == nil) {
+        mVertexFunction = function;
+    }
 
     return mVertexFunction;
 }
 
 id<MTLFunction> MetalBlitter::getBlitFragmentFunction(BlitFunctionKey key) {
     assert_invariant(key.isValid());
-    auto iter = mBlitFunctions.find(key);
-    if (iter != mBlitFunctions.end()) {
-        return iter.value();
+    {
+        utils::LockGuard const lock(mLock);
+        auto iter = mBlitFunctions.find(key);
+        if (iter != mBlitFunctions.end()) {
+            return iter.value();
+        }
     }
 
     auto function = compileFragmentFunction(key);
-    mBlitFunctions.emplace(std::make_pair(key, function));
 
-    return function;
+    utils::LockGuard const lock(mLock);
+    auto [iter, inserted] = mBlitFunctions.emplace(key, function);
+
+    return iter.value();
 }
 
 } // namespace filament::backend

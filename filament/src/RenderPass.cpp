@@ -245,8 +245,8 @@ void RenderPass::appendCommands(FEngine const& engine, backend::DriverApi& drive
     // This must be done from the main thread.
     for (Command const* first = curr, *last = curr + commandCount ; first != last ; ++first) {
         if (UTILS_LIKELY((first->key & CUSTOM_MASK) == uint64_t(CustomCommand::PASS))) {
-            first->info.mi->prepareProgram(driver, first->info.materialVariant, first->info.dynamicSpecConstKey,
-                    CompilerPriorityQueue::CRITICAL);
+            first->info.mi->prepareProgram(driver, first->info.materialVariant,
+                    first->info.dynamicSpecConstKey, CompilerPriorityQueue::CRITICAL);
         }
     }
 }
@@ -306,10 +306,20 @@ RenderPass::Command* RenderPass::instanceify(
 
     auto equivalent = [](Command const& lhs, Command const& rhs) {
         // This predicate must also filter out commands that are not eligible for auto-instancing.
-        if (UTILS_UNLIKELY(lhs.info.hasSkinning || lhs.info.hasMorphing || lhs.info.instanceCount > 1)) {
+        // Hybrid-instanced commands are excluded even when their instanceCount is 1, because
+        // their info.index refers to the InstanceBuffer's slots in the per-renderable UBO, not to
+        // an entry of the scene's UBO SoA (which is what the processor below reads from).
+        // Commands using an `instanced` material are excluded because such shaders read
+        // objectUniforms.data[0] for non-hybrid draws (see surface_instancing.glsl), so all
+        // merged instances would use the first renderable's data.
+        if (UTILS_UNLIKELY(lhs.info.hasSkinning || lhs.info.hasMorphing ||
+                lhs.info.hasHybridInstancing || lhs.info.hasInstancedMaterial ||
+                lhs.info.instanceCount > 1)) {
             return false;
         }
-        if (UTILS_UNLIKELY(rhs.info.hasSkinning || rhs.info.hasMorphing || rhs.info.instanceCount > 1)) {
+        if (UTILS_UNLIKELY(rhs.info.hasSkinning || rhs.info.hasMorphing ||
+                rhs.info.hasHybridInstancing || rhs.info.hasInstancedMaterial ||
+                rhs.info.instanceCount > 1)) {
             return false;
         }
         // Now check for equality
@@ -619,17 +629,11 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
         bool const hasSkinning = soaSkinningData[i].skinning;
         bool const hasSkinningOrMorphing = hasSkinning || hasMorphing;
 
-        // if we are already an SSR variant, the SRE bit is already set
-        static_assert(Variant::SPECIAL_SSR_VARIANT & Variant::SRE);
         Variant renderableVariant{ variant };
 
-        // we can't have SSR and shadowing together by construction
-        bool const isSsrVariant = Variant::isSSRVariant(variant);
-        assert_invariant((isSsrVariant && !hasShadowing) || !isSsrVariant);
-        if (!isSsrVariant) {
-            // set the SRE variant, unless we're in SSR mode
-            renderableVariant.setShadowReceiver(soaVisibility[i].receiveShadows && hasShadowing);
-        }
+        // We can't have SSR and shadowing together by construction.
+        assert_invariant(!Variant::isSSRVariant(variant) || !hasShadowing);
+        renderableVariant.setShadowReceiver(soaVisibility[i].receiveShadows && hasShadowing);
 
         renderableVariant.setSkinning(hasSkinningOrMorphing);
 
@@ -702,6 +706,7 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
             cmd.info.count = primitive.getCount();
             cmd.info.type = primitive.getPrimitiveType();
             cmd.info.isIndexed = primitive.isIndexed();
+            cmd.info.hasInstancedMaterial = ma->isInstanced();
             cmd.info.morphingOffset = primitive.getMorphingBufferOffset();
 // FIXME: morphtarget buffer
 //            cmd.info.morphTargetBuffer = morphing.morphTargetBuffer ?
@@ -892,6 +897,10 @@ backend::Viewport RenderPass::Executor::applyScissorViewport(
     s.b = std::max(s.b, int64_t(0));
     s.r = std::min(s.r, maxvali);
     s.t = std::min(s.t, maxvali);
+
+    // If scissor and scissorViewport do not intersect, the result is an empty scissor.
+    s.r = std::max(s.l, s.r);
+    s.t = std::max(s.b, s.t);
 
     assert_invariant(s.r >= s.l && s.t >= s.b);
 

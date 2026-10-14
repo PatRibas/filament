@@ -21,6 +21,7 @@
 #include <utils/CString.h>
 #include <utils/Entity.h>
 #include <utils/EntityInstance.h>
+#include <utils/PagedArenaBitsetPool.h>
 #include <utils/SingleInstanceComponentManager.h>
 
 #include <stddef.h>
@@ -35,7 +36,8 @@ class EntityManager;
  *
  * To access the name of an existing entity, clients should first use NameComponentManager to get a
  * temporary handle called an \em instance. Please note that instances are ephemeral; clients should
- * store entities, not instances.
+ * store entities, not instances. Instances are not stable when a component is added, removed or
+ * gc() is called on a component manager.
  *
  * Usage example:
  *
@@ -49,6 +51,11 @@ class EntityManager;
  */
 class UTILS_PUBLIC NameComponentManager : private SingleInstanceComponentManager<CString> {
 public:
+    /**
+     * An Instance representing a name component.
+     * Instances are not stable when a component is added, removed or gc() is called on a
+     * component manager.
+     */
     using Instance = EntityInstance<NameComponentManager>;
 
     /**
@@ -68,9 +75,14 @@ public:
     /**
      * Gets a temporary handle that can be used to access the name.
      *
+     * @param e An Entity.
      * @return Non-zero handle if the entity has a name component, 0 otherwise.
+     * @note Use Instance::isValid() to make sure the component exists.
+     * @note Instances are not stable when a component is added, removed or gc() is called
+     *       on a component manager.
+     * @see hasComponent()
      */
-    Instance getInstance(Entity e) const noexcept {
+    Instance getInstance(Entity const e) const noexcept {
         return { SingleInstanceComponentManager::getInstance(e) };
     }
 
@@ -85,6 +97,15 @@ public:
     void removeComponent(Entity e);
 
     /**
+     * Destroys the name component of the given entity.
+     */
+    void destroyComponents(Entity const* entities, size_t count) noexcept;
+
+    void destroy(Entity e) noexcept {
+        destroyComponents(&e, 1);
+    }
+
+    /**
      * Stores a copy of the given string and associates it with the given instance.
      */
     void setName(Instance instance, const char* name) noexcept;
@@ -96,10 +117,8 @@ public:
      */
     const char* getName(Instance instance) const noexcept;
 
-    void gc(EntityManager& em) noexcept {
-        SingleInstanceComponentManager<CString>::gc(em, [this](Entity e) {
-            removeComponent(e);
-        });
+    void gc() noexcept {
+        SingleInstanceComponentManager<CString>::gc(this, &NameComponentManager::destroyComponents);
     }
 };
 

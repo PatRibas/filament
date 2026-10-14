@@ -23,6 +23,7 @@
 #include <utils/compiler.h>
 #include <utils/Entity.h>
 #include <utils/EntityInstance.h>
+#include <utils/Slice.h>
 
 #include <math/mathfwd.h>
 #include <math/quat.h>
@@ -86,8 +87,12 @@ class FLightManager;
  * To create a directional light use Type.DIRECTIONAL or Type.SUN, both are similar, but the later
  * also draws a sun's disk in the sky and its reflection on glossy objects.
  *
- * @warning Currently, only a single directional light is supported. If several directional lights
- * are added to the scene, the dominant one will be used.
+ * By default, only the dominant directional light (the one with the highest intensity) of a
+ * scene is evaluated. Several directional lights can be used by enabling
+ * Engine::Config::enableMultipleDirectionalLights: the dominant one is still the only one that
+ * can cast shadows and draw a sun's disk, and up to CONFIG_MAX_EXTRA_DIRECTIONAL_LIGHTS (4)
+ * additional directional lights are evaluated without shadows; any further directional lights
+ * are ignored. Scenes with a single directional light don't pay any cost for this feature.
  *
  * @see Builder.direction(), Builder.sunAngularRadius()
  *
@@ -138,11 +143,26 @@ class FLightManager;
  *    On the other hand, a scene can contain hundreds of non overlapping lights without
  *    incurring a significant overhead.
  *
+ * Instance lifetime
+ * =================
+ *
+ * An Instance is a transient handle: Instances are not stable when a component is added,
+ * removed or gc() is called on a component manager.
+ *
+ * Instances must therefore not be kept across frames. Keep the Entity instead, and call
+ * getInstance() again when needed; it is a fast lookup. Using a stale Instance doesn't crash
+ * but silently accesses the wrong component.
+ *
  */
 class UTILS_PUBLIC LightManager : public FilamentAPI {
     struct BuilderDetails;
 
 public:
+    /**
+     * An Instance representing a light component.
+     * Instances are not stable when a component is added, removed or gc() is called on a
+     * component manager.
+     */
     using Instance = utils::EntityInstance<LightManager>;
 
     /**
@@ -176,6 +196,15 @@ public:
      * Retrieve the Entities of all the components of this manager.
      * @return A list, in no particular order, of all the entities managed by this manager.
      */
+    utils::Slice<const utils::Entity> getAllEntities() const noexcept;
+
+    /**
+     * Retrieve the Entities of all the components of this manager.
+     * @return A list, in no particular order, of all the entities managed by this manager.
+     * @deprecated Use getAllEntities() instead.
+     */
+    UTILS_DEPRECATED
+    UTILS_NOAPIGEN
     utils::Entity const* UTILS_NONNULL getEntities() const noexcept;
 
     /**
@@ -183,6 +212,9 @@ public:
      * @param e An Entity.
      * @return An Instance object, which represents the Light component associated with the Entity e.
      * @note Use Instance::isValid() to make sure the component exists.
+     * @note The returned Instance is transient and must not be kept across frames, see
+     *       "Instance lifetime" above. Instances are not stable when a component is added,
+     *       removed or gc() is called on a component manager.
      * @see hasComponent()
      */
     Instance getInstance(utils::Entity e) const noexcept;
@@ -245,13 +277,13 @@ public:
 
         /** Constant bias in world units (e.g. meters) by which shadows are moved away from the
          * light. 1mm by default.
-         * This is ignored when the View's ShadowType is set to VSM.
+         * This is ignored when the View's ShadowType is set to VSM or PCSS.
          */
         float constantBias = 0.001f;
 
         /** Amount by which the maximum sampling error is scaled. The resulting value is used
          * to move the shadow away from the fragment normal. Should be 1.0.
-         * This is ignored when the View's ShadowType is set to VSM.
+         * This is ignored when the View's ShadowType is set to VSM or PCSS.
          */
         float normalBias = 1.0f;
 
@@ -361,6 +393,9 @@ public:
              * an improvement to the default EVSM which suffers important light leaks. Enabling
              * ELVSM for a single shadowmap doubles the memory usage of all shadow maps.
              * ELVSM is mostly useful when large blurs are used.
+             *
+             * elvsm is only relevant when the ShadowType is VSM
+             * elvsm is always enabled with PCSS
              */
             bool elvsm = false;
 
@@ -372,10 +407,15 @@ public:
         } vsm;
 
         /**
-         * Light bulb radius used for soft shadows. Currently, this is only used when DPCF or PCSS is
-         * enabled. (2cm by default).
+         * Light bulb radius used for soft shadows. This is only used PCSS.
+         * A negative value is used to use a default value for each light type.
+         * For Spot and point-lights, this is the radius of the light bulb in meters.
+         * For Directional lights, this is tan(angularRadius), or just angularRadius [Rad] for small angles.
+         * SUN: getSunAngularRadius() * getSunHaloSize()
+         * DIRECTIONAL: 1.0 (1m area light)
+         * POINT / SPOT: 0.06 (A19 bulb)
          */
-        float shadowBulbRadius = 0.02f;
+        float shadowBulbRadius = -1.0f;
 
         /**
          * Transforms the shadow direction. Must be a unit quaternion.
@@ -383,6 +423,82 @@ public:
          * Ignored if the light type isn't directional. For artistic use. Use with caution.
          */
         math::quatf transform{ 1.0f };
+
+        /**
+         * Sets a light-specific scale factor applied to the final penumbra size of PCSS shadows.
+         *
+         * This parameter acts as an artistic modifier, allowing you to artificially soften or
+         * sharpen the shadows cast by this specific light without changing its physical
+         * light bulb size or altering the global scene lighting.
+         *
+         * The final scale applied to the shadow is calculated by modulating this local
+         * value with the global SoftShadowOptions::penumbraScale (global * local).
+         *
+         * The local penumbra scale multiplier. Default is 1.0.
+         *
+         * @see SoftShadowOptions::penumbraScale
+         */
+        float penumbraScale = 1.0f;
+
+        /**
+         * Sets a light-specific scale factor applied to the PCSS geometric ratio before clamping.
+         *
+         * This parameter controls the "contact shadow contrast" for this specific light. It
+         * allows artists to dictate how rapidly this light's shadow transitions from razor-sharp
+         * at the contact point to its maximum blur radius. It is heavily utilized to stylize
+         * lighting and aggressively mask 2.5D shadow map limitations near occluders.
+         *
+         * - Values > 1.0 (e.g., 10.0 or 20.0) create a rapid, cinematic blur acceleration.
+         * - Values < 1.0 keep the shadow crisp over longer distances.
+         *
+         * The final ratio scale applied is calculated by modulating this local value with
+         * the global SoftShadowOptions::penumbraRatioScale (global * local).
+         *
+         * The local penumbra ratio scale multiplier. Default is 1.0.
+         *
+         * @see SoftShadowOptions::penumbraRatioScale
+         */
+        float penumbraRatioScale = 1.0f;
+
+        /**
+         * Sets a light-specific maximum geometric ratio applied to Percentage-Closer Soft Shadows (PCSS),
+         * overriding the global default.
+         *
+         * In PCSS, overlapping occluders (like complex light fixtures) can cause the shadow map's 2.5D
+         * depth limitations to calculate an artificially close blocker depth. This drives the geometric
+         * ratio toward infinity, resulting in unnatural, massive "ghost" shadows.
+         *
+         * This parameter allows you to clamp the geometric ratio for this specific light, fixing geometric
+         * artifacts caused by layered occluders without compromising the soft shadows of other lights in
+         * the scene.
+         *
+         * The maximum penumbra ratio. Setting this to a value <= 0.0f disables the
+         * override and reverts the light to using the global default.
+         *
+         * @see SoftShadowOptions::maxPenumbraRatio
+         */
+        float maxPenumbraRatio = 0.0f;
+
+        /**
+         * Sets a light-specific maximum world-space radius used during the PCSS blocker search,
+         * overriding the global default.
+         *
+         * In PCSS, the shadow algorithm searches a region of the shadow map to find the
+         * average depth of occluders. If this search region expands too much, it may inadvertently
+         * overlap distinct foreground geometry (like the light's own complex fixture) or climb
+         * vertical surfaces (like a pole), causing the shadow to detach from the contact point
+         * and appear to float.
+         *
+         * This parameter allows you to clamp the physical footprint of the blocker search
+         * for this specific light, fixing floating contact artifacts without compromising the
+         * soft shadows of other lights in the scene.
+         *
+         * The maximum search radius in world-space meters. Setting this to a
+         * value <= 0.0f disables the override and reverts the light to using the global default.
+         *
+         * @see SoftShadowOptions::maxSearchRadius
+         */
+        float maxSearchRadius = 0.0f;
     };
 
     struct ShadowCascades {
@@ -673,7 +789,7 @@ public:
          *            memory or other resources.
          * @exception utils::PreConditionPanic if a parameter to a builder function was invalid.
          */
-        Result build(Engine& engine, utils::Entity entity);
+        Result build(Engine& engine, utils::Entity entity) const;
 
     private:
         friend class FEngine;

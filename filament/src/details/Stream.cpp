@@ -71,7 +71,11 @@ Stream::Builder& Stream::Builder::name(utils::StaticString const& name) noexcept
     return BuilderNameMixin::name(name);
 }
 
-Stream* Stream::Builder::build(Engine& engine) {
+Stream::Builder& Stream::Builder::name(utils::ImmutableCString const& name) noexcept {
+    return BuilderNameMixin::name(name);
+}
+
+Stream* Stream::Builder::build(Engine& engine) const {
     return downcast(engine).createStream(*this);
 }
 

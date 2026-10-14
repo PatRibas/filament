@@ -21,6 +21,7 @@
 
 #include <utils/compiler.h>
 #include <utils/EntityInstance.h>
+#include <utils/Slice.h>
 
 #include <math/mathfwd.h>
 
@@ -66,9 +67,31 @@ class FTransformManager;
  *  tcm.destroy(object);
  * ~~~~~~~~~~~
  *
+ * Instance lifetime
+ * =================
+ *
+ * An Instance is a transient handle: Instances are not stable when a component is added,
+ * removed or gc() is called on a component manager. In addition, TransformManager reorders
+ * its components internally to speed up world transform computation, which changes the Instance
+ * associated with an Entity.
+ * An Instance obtained from getInstance() is only valid until the next call to any of:
+ *
+ * - create(), destroy() or setParent() on this TransformManager,
+ * - commitLocalTransformTransaction(),
+ * - Renderer::endFrame() or Renderer::skipFrame(), which perform periodic maintenance.
+ *
+ * Instances must therefore not be kept across frames. Keep the Entity instead, and call
+ * getInstance() again when needed; it is a fast lookup. Using a stale Instance doesn't crash
+ * but silently accesses the wrong component.
+ *
  */
 class UTILS_PUBLIC TransformManager : public FilamentAPI {
 public:
+    /**
+     * An Instance representing a transform component.
+     * Instances are not stable when a component is added, removed or gc() is called on a
+     * component manager.
+     */
     using Instance = utils::EntityInstance<TransformManager>;
 
     struct children_sentinel {};
@@ -137,6 +160,9 @@ public:
      * @param e An Entity.
      * @return An Instance object, which represents the transform component associated with the Entity e.
      * @note Use Instance::isValid() to make sure the component exists.
+     * @note The returned Instance is transient and must not be kept across frames, see
+     *       "Instance lifetime" above. Instances are not stable when a component is added,
+     *       removed or gc() is called on a component manager.
      * @see hasComponent()
      */
     Instance getInstance(utils::Entity e) const noexcept;
@@ -162,6 +188,15 @@ public:
      * Retrieve the Entities of all the components of this manager.
      * @return A list, in no particular order, of all the entities managed by this manager.
      */
+    utils::Slice<const utils::Entity> getAllEntities() const noexcept;
+
+    /**
+     * Retrieve the Entities of all the components of this manager.
+     * @return A list, in no particular order, of all the entities managed by this manager.
+     * @deprecated Use getAllEntities() instead.
+     */
+    UTILS_DEPRECATED
+    UTILS_NOAPIGEN
     utils::Entity const* UTILS_NONNULL getEntities() const noexcept;
 
     /**

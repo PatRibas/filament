@@ -17,10 +17,9 @@
 #ifndef TNT_FILAMENT_DETAILS_ENGINE_H
 #define TNT_FILAMENT_DETAILS_ENGINE_H
 
-#include "downcast.h"
-
 #include "Allocators.h"
 #include "DFG.h"
+#include "downcast.h"
 #include "HwDescriptorSetLayoutFactory.h"
 #include "HwVertexBufferInfoFactory.h"
 #include "MaterialCache.h"
@@ -34,12 +33,11 @@
 #include "components/RenderableManager.h"
 #include "components/TransformManager.h"
 
-#include "ds/DescriptorSetLayout.h"
-
 #include "details/BufferObject.h"
 #include "details/ColorGrading.h"
 #include "details/DebugRegistry.h"
 #include "details/Fence.h"
+#include "details/FramePacer.h"
 #include "details/InstanceBuffer.h"
 #include "details/MorphTargetBuffer.h"
 #include "details/RenderTarget.h"
@@ -47,50 +45,54 @@
 #include "details/Skybox.h"
 #include "details/Sync.h"
 
+#include "ds/DescriptorSetLayout.h"
+
 #include <private/filament/EngineEnums.h>
 #include <private/filament/Variant.h>
 
-#include <private/backend/CommandBufferQueue.h>
-#include <private/backend/CommandStream.h>
-
-#include <private/utils/FeatureFlagManager.h>
-
-
 #include <filament/ColorGrading.h>
 #include <filament/Engine.h>
+#include <filament/FramePacer.h>
+#include <filament/IndexBuffer.h>
 #include <filament/IndirectLight.h>
 #include <filament/Material.h>
 #include <filament/Skybox.h>
 #include <filament/Stream.h>
 #include <filament/Texture.h>
 #include <filament/VertexBuffer.h>
-#include <filament/IndexBuffer.h>
+
+#include <private/backend/CommandBufferQueue.h>
+#include <private/backend/CommandStream.h>
 
 #include <backend/CallbackHandler.h>
 #include <backend/DriverEnums.h>
 
+#include <private/utils/FeatureFlagManager.h>
+
 #include <utils/Allocator.h>
 #include <utils/compiler.h>
+#include <utils/Condition.h>
 #include <utils/CountDownLatch.h>
 #include <utils/debug.h>
 #include <utils/FixedCapacityVector.h>
 #include <utils/Invocable.h>
 #include <utils/JobSystem.h>
 #include <utils/memalign.h>
+#include <utils/Mutex.h>
+#include <utils/PagedArenaBitsetPool.h>
 #include <utils/Slice.h>
 #include <utils/tribool.h>
 
-#include <cstddef>
+#include <atomic>
 #include <chrono>
-#include <condition_variable>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <new>
 #include <optional>
-#include <string_view>
 #include <random>
+#include <string_view>
 #include <thread>
-#include <mutex>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -186,13 +188,21 @@ public:
     // the per-frame Area is used by all Renderer, so they must run in sequence and
     // have freed all allocated memory when done. If this needs to change in the future,
     // we'll simply have to use separate Areas (for instance).
-    LinearAllocatorArena& getPerRenderPassArena() noexcept { return mPerRenderPassArena; }
+    auto& getPerRenderPassArena() noexcept { return mPerRenderPassArena; }
 
     // Material IDs...
-    uint32_t getMaterialId() const noexcept { return mMaterialId++; }
+    uint32_t getMaterialId() const noexcept {
+        return mMaterialId.fetch_add(1, std::memory_order_relaxed);
+    }
 
     const FMaterial* getDefaultMaterial() const noexcept { return mDefaultMaterial; }
-    const FMaterial* getSkyboxMaterial() const noexcept;
+    // The default material's default instance, created by init(). Renderables without a material
+    // instance use it, and shared variants of other materials bind its descriptor sets.
+    const FMaterialInstance* getDefaultMaterialInstance() const noexcept {
+        return mDefaultMaterialInstance;
+    }
+    // not const: creates the skybox material on first use
+    const FMaterial* getSkyboxMaterial() noexcept;
     const FIndirectLight* getDefaultIndirectLight() const noexcept { return mDefaultIbl; }
     const FTexture* getDummyCubemap() const noexcept { return mDefaultIblTexture; }
     const FColorGrading* getDefaultColorGrading() const noexcept { return mDefaultColorGrading; }
@@ -277,7 +287,11 @@ public:
         return mTransformManager;
     }
 
-    utils::EntityManager& getEntityManager() noexcept {
+    FTransformManager const& getTransformManager() const noexcept {
+        return mTransformManager;
+    }
+
+    utils::EntityManager& getEntityManager() const noexcept {
         return mEntityManager;
     }
 
@@ -361,6 +375,7 @@ public:
             MaterialDefinition const& definition) noexcept;
     FTexture* createTexture(const Texture::Builder& builder) noexcept;
     FSkybox* createSkybox(const Skybox::Builder& builder) noexcept;
+    FFramePacer* createFramePacer(const FramePacer::Builder& builder) noexcept;
     FColorGrading* createColorGrading(const ColorGrading::Builder& builder) noexcept;
     FStream* createStream(const Stream::Builder& builder) noexcept;
     FRenderTarget* createRenderTarget(const RenderTarget::Builder& builder) noexcept;
@@ -384,6 +399,7 @@ public:
 
     FCamera* createCamera(utils::Entity entity) noexcept;
     FCamera* getCameraComponent(utils::Entity entity) noexcept;
+    FCamera const* getCameraComponent(utils::Entity entity) const noexcept;
     void destroyCameraComponent(utils::Entity entity) noexcept;
 
 
@@ -400,6 +416,7 @@ public:
     void dispatch(const FMaterialInstance* materialInstance,
             math::uint3 workGroupCount) noexcept;
     bool destroy(const FRenderer* p);
+    bool destroy(const FFramePacer* p);
     bool destroy(const FScene* p);
     bool destroy(const FSkybox* p);
     bool destroy(const FColorGrading* p);
@@ -498,6 +515,10 @@ public:
     }
 
     FDebugRegistry& getDebugRegistry() noexcept {
+        return mDebugRegistry;
+    }
+
+    FDebugRegistry const& getDebugRegistry() const noexcept {
         return mDebugRegistry;
     }
 
@@ -622,6 +643,7 @@ public:
 
 private:
     explicit FEngine(Builder const& builder);
+    FEngine(Builder const& builder, Config const& validatedConfig);
     void init();
     void shutdown();
 
@@ -635,6 +657,11 @@ private:
 
     template<typename T>
     bool terminateAndDestroy(const T* ptr, ResourceList<T>& list);
+
+    // Frees the frontend object, or defers the free until its asynchronous creation settles.
+    // Must be called after T::terminate().
+    template<typename T>
+    void destroyOrDeferFrontendObject(T* p);
 
     template<typename T>
     void cleanupResourceList(ResourceList<T>&& list);
@@ -670,6 +697,7 @@ private:
 
     ResourceList<FBufferObject> mBufferObjects{ "BufferObject" };
     ResourceList<FRenderer> mRenderers{ "Renderer" };
+    ResourceList<FFramePacer> mFramePacers{ "FramePacer" };
     ResourceList<FView> mViews{ "View" };
     ResourceList<FScene> mScenes{ "Scene" };
     ResourceList<FSwapChain> mSwapChains{ "SwapChain" };
@@ -690,8 +718,8 @@ private:
     mutable utils::Mutex mFenceListLock;
     ResourceList<FFence> mFences UTILS_GUARDED_BY(mFenceListLock){"Fence"};
 
-    mutable std::mutex mFenceLock;
-    mutable std::condition_variable mFenceCondition;
+    mutable utils::Mutex mFenceLock;
+    mutable utils::Condition mFenceCondition;
     bool mFenceHasUnrecoverableError = false;
 
     // the sync list is accessed from multiple threads, because they are
@@ -699,7 +727,7 @@ private:
     mutable utils::Mutex mSyncListLock;
     ResourceList<FSync> mSyncs UTILS_GUARDED_BY(mSyncListLock){ "Sync" };
 
-    mutable uint32_t mMaterialId = 0;
+    mutable std::atomic<uint32_t> mMaterialId = 0;
 
     // FMaterialInstance are handled directly by FMaterial
     std::unordered_map<const FMaterial*, ResourceList<FMaterialInstance>> mMaterialInstances;
@@ -708,13 +736,13 @@ private:
 
     std::thread mDriverThread;
     backend::CommandBufferQueue mCommandBufferQueue;
-    std::aligned_storage<sizeof(DriverApi), alignof(DriverApi)>::type mDriverApiStorage;
+    std::aligned_storage_t<sizeof(DriverApi), alignof(DriverApi)> mDriverApiStorage;
     static_assert( sizeof(mDriverApiStorage) >= sizeof(DriverApi) );
 
     uint32_t mFlushCounter = 0;
 
     UboManager* mUboManager = nullptr;
-    RootArenaScope::Arena mPerRenderPassArena;
+    LinearAllocatorArena mPerRenderPassArena;
     HeapAllocatorArena mHeapAllocator;
 
     utils::JobSystem mJobSystem;
@@ -724,14 +752,15 @@ private:
 
     Epoch mEngineEpoch;
 
-    mutable FMaterial const* mDefaultMaterial = nullptr;
-    mutable FMaterial const* mSkyboxMaterial = nullptr;
-    mutable FSwapChain* mUnprotectedDummySwapchain = nullptr;
+    FMaterial const* mDefaultMaterial = nullptr;
+    FMaterialInstance const* mDefaultMaterialInstance = nullptr;
+    FMaterial const* mSkyboxMaterial = nullptr;
+    FSwapChain* mUnprotectedDummySwapchain = nullptr;
 
-    mutable FTexture* mDefaultIblTexture = nullptr;
-    mutable FIndirectLight* mDefaultIbl = nullptr;
+    FTexture* mDefaultIblTexture = nullptr;
+    FIndirectLight* mDefaultIbl = nullptr;
 
-    mutable FColorGrading* mDefaultColorGrading = nullptr;
+    FColorGrading* mDefaultColorGrading = nullptr;
     FMorphTargetBuffer* mDummyMorphTargetBuffer = nullptr;
 
     mutable utils::CountDownLatch mDriverBarrier;
@@ -793,6 +822,8 @@ public:
             bool doFrameCapture = false;
             bool disable_buffer_padding = false;
             bool disable_subpasses = false;
+            // See Renderer::setPresentationTime()
+            bool disable_set_presentation_time = false;
         } renderer;
         struct {
             bool debug_froxel_visualization = false;
@@ -800,6 +831,17 @@ public:
         struct {
             bool combine_multiview_images = false;
         } stereo;
+        struct {
+            // When enabled (d.vulkan.debug_utils_names), the Vulkan backend explicitly requests the
+            // VK_EXT_debug_utils extension at startup and tracks group markers in the command
+            // buffer. It will also name the render passes with the top group marker so they show up
+            // in RenderDoc and other GPU debugging tools.
+            std::atomic<bool> enable_debug_utils_names{ false };
+            // When enabled (d.vulkan.renderdoc_capture), the Vulkan backend enables the RenderDoc
+            // capture layer and disables features incompatible with RenderDoc (such as lazily
+            // allocated memory and non-replayable external memory types) to support frame captures.
+            std::atomic<bool> enable_renderdoc_capture{ false };
+        } vulkan;
         matdbg::DebugServer* server = nullptr;
         FgviewerManager* fgviewer = nullptr;
     } debug;

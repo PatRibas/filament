@@ -27,13 +27,13 @@
 #include <utils/CString.h>
 #include <utils/FixedCapacityVector.h>
 #include <utils/Hash.h>
+#include <utils/ImmutableCString.h>
 #include <utils/PrivateImplementation.h>
 
 #include <cstddef>
 #include <cstring>
 #include <functional>
 #include <tuple>
-#include <unordered_set>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -54,7 +54,8 @@ struct VulkanCmdFence;
 /**
  * A Platform interface that creates a Vulkan backend.
  */
-class UTILS_SHARED_LINKING VulkanPlatform : public Platform, utils::PrivateImplementation<VulkanPlatformPrivate> {
+class UTILS_SHARED_LINKING VulkanPlatform : public Platform,
+                                            utils::PrivateImplementation<VulkanPlatformPrivate> {
 public:
     /**
      * Encapsulates information required to instantiate a known external format,
@@ -67,20 +68,8 @@ public:
         VkSamplerYcbcrRange ycbcrRange;
     };
 
-    struct ExtensionHashFn {
-        std::size_t operator()(utils::CString const& s) const noexcept {
-            return std::hash<utils::CString>{}(s.data());
-        }
-    };
-    // Note: utils::CString::operator== has an edge case that breaks for the extension set.
-    // Instead, we'll provide our own comparator.
-    struct ExtensionEqualFn {
-        bool operator()(utils::CString const& a, utils::CString const& b) const noexcept {
-            return strcmp(a.c_str(), b.c_str()) == 0;
-        }
-    };
     // Utility for managing device or instance extensions during initialization.
-    using ExtensionSet = std::unordered_set<utils::CString, ExtensionHashFn, ExtensionEqualFn>;
+    using ExtensionSet = utils::FixedCapacityVector<utils::ImmutableCString>;
 
     /**
      * A collection of handles to objects and metadata that comprises a Vulkan context. The client
@@ -98,7 +87,7 @@ public:
         // where the gpu only has one graphics queue. Then the client needs to ensure that no
         // concurrent access can occur.
         uint32_t graphicsQueueIndex = 0xFFFFFFFF;
-        bool debugUtilsSupported = false;
+        bool debugUtilsEnabled = false;
         bool debugMarkersSupported = false;
         bool multiviewSupported = false;
     };
@@ -328,6 +317,10 @@ public:
     VkQueue getGraphicsQueue() const noexcept;
 
     /**
+     * @return The queue that was selected for the asynchronous backend operations.
+     */
+    VkQueue getAsyncQueue() const noexcept;
+    /**
     * @return The family index of the protected graphics queue selected for the
     *          Vulkan backend.
     */
@@ -364,6 +357,11 @@ public:
          * The height of the external image
          */
         uint32_t height;
+
+        /**
+         * The number of mipmap levels of the external image
+         */
+        uint32_t mipLevels;
 
         /**
          * The layer count of the external image
@@ -479,6 +477,30 @@ public:
         return {};
     }
 
+    /**
+     * Whether this platform can honor setPresentationTime().
+     *
+     * The default implementation returns true when the `VK_GOOGLE_display_timing` device
+     * extension is enabled, which is what the swapchain implementation provided by Filament uses
+     * to schedule the presentation. A platform that overrides setPresentationTime() to schedule
+     * the presentation by other means must also override this method.
+     *
+     * @return true if setPresentationTime() is honored by this platform, false otherwise.
+     * @see setPresentationTime()
+     */
+    virtual bool isPresentationTimeSupported() const noexcept;
+
+    /**
+     * On certain platforms, it is possible to set the time that the committed buffers should be
+     * presented at. This affects all of the commited buffers across all swapchains provided to the
+     * backend. Set to 0 if this behavior is not desired. This is only honored if
+     * isPresentationTimeSupported() returns true.
+     *
+     * @param intended present time
+     * @see isPresentationTimeSupported()
+     */
+    virtual void setPresentationTime(int64_t presentTime) noexcept;
+
 protected:
     struct VulkanSync : public Sync {
         explicit VulkanSync(std::shared_ptr<VulkanCmdFence> fence) noexcept
@@ -543,6 +565,11 @@ protected:
     bool isTransientAttachmentSupported() const noexcept;
 
     /**
+     * Query if RenderDoc capture mode is enabled for the backend.
+     */
+    bool isRenderDocCaptureEnabled() const noexcept;
+
+    /**
      * For pipeline cache prewarming, if external samplers are present, we need to build
      * the fake pipeline using the proper formats specified. Since there's no way to
      * get these at material build time, we allow the app to register them before
@@ -578,7 +605,7 @@ private:
         Platform::GpuContextPriority gpuContextPriority = Platform::GpuContextPriority::DEFAULT;
     };
 
-    void createInstance(ExtensionSet const& requiredExts) noexcept;
+    void createInstance(ExtensionSet const& requiredExts, bool enableRenderdoc = false) noexcept;
 
     void queryAndSetDeviceFeatures(Platform::DriverConfig const& driverConfig,
             ExtensionSet const& instExts, ExtensionSet const& deviceExts,
@@ -587,7 +614,7 @@ private:
     void createLogicalDeviceAndQueues(ExtensionSet const& deviceExtensions,
             VkPhysicalDeviceFeatures const& features,
             VkPhysicalDeviceVulkan11Features const& vk11Features, bool createProtectedQueue,
-            MiscDeviceFeatures const& requestedFeatures) noexcept;
+            MiscDeviceFeatures const& requestedFeatures, bool createSecondGraphicsQueue) noexcept;
 
     friend struct VulkanPlatformPrivate;
 };

@@ -17,15 +17,63 @@
 #ifndef TNT_SAMPLES_ARGUMENTS_H
 #define TNT_SAMPLES_ARGUMENTS_H
 
+#include <filamentapp/AssetLoader.h>
+#include <filamentapp/AssetWriter.h>
+#include <filamentapp/DisplayManager.h>
+#include <filamentapp/FilamentApp2.h>
+
 #include <filament/Engine.h>
 
-#include <string>
+#include <utils/CString.h>
+#include <utils/FixedCapacityVector.h>
+
+#include <samples/Parameter.h>
+#include <samples/SampleConfig.h>
+
+#include <memory>
 
 namespace samples {
 
-filament::Engine::Backend parseArgumentsForBackend(int argc, char* argv[]);
-filament::Engine::Backend parseArgumentsForBackend(const std::string& backend);
-std::string getBackendAPIArgumentsUsage();
+FilamentApp2::Builder getBuilder(const SampleConfig& config,
+        filament::app::DisplayManager* dm = nullptr, filament::app::AssetLoader* loader = nullptr,
+        filament::app::AssetWriter* writer = nullptr);
 
+std::unique_ptr<filament::app::DisplayManager> getDisplayManager(const SampleConfig& config);
+
+#ifndef __ANDROID__
+utils::Path getDefaultAssetPath();
+std::unique_ptr<filament::app::AssetLoader> getAssetLoader(const SampleConfig& config);
+std::unique_ptr<filament::app::AssetWriter> getAssetWriter(const SampleConfig& config);
+#endif
+
+/**
+ * Runs `app` to completion and returns a process exit code.
+ *
+ * Takes ownership of everything the app borrows, because whether the app outlives this call is a
+ * platform decision. Where the frame loop blocks, all of them are destroyed here. Where frames come
+ * from an external source such as requestAnimationFrame, FilamentApp2::run() returns as soon as the
+ * loop is registered and they are released instead.
+ *
+ * Pass `assetWriter` if one was given to the builder. FilamentApp2 holds a raw pointer to it and
+ * writes through it from a screenshot's readPixels callback, which can land after main() returns.
+ */
+int runApp(std::unique_ptr<FilamentApp2> app,
+        std::unique_ptr<filament::app::DisplayManager> displayManager,
+        std::unique_ptr<filament::app::AssetLoader> assetLoader,
+        std::unique_ptr<filament::app::AssetWriter> assetWriter = nullptr);
+
+SampleParameters getCommonParameters();
+
+struct CommandLineSpecification {
+    utils::CString sampleDescription;
+    utils::FixedCapacityVector<utils::CString> positionalArgsDescription;
+    int requiredPositionalArgCount = 0;
+    SampleParameters parameters;
+};
+
+void printUsage(const char* execName, const CommandLineSpecification& spec = {});
+
+int handleCommandLineArguments(int argc, char* argv[], SampleConfig* config,
+        const CommandLineSpecification& spec = {});
 } // namespace samples
 #endif //TNT_SAMPLES_ARGUMENTS_H

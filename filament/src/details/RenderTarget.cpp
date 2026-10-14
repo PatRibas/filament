@@ -21,7 +21,10 @@
 #include "details/Engine.h"
 #include "details/Texture.h"
 
+#include <filament/Engine.h>
 #include <filament/RenderTarget.h>
+
+#include <backend/DriverEnums.h>
 
 #include <utils/BitmaskEnum.h>
 #include <utils/compiler.h>
@@ -41,13 +44,7 @@ using namespace backend;
 
 struct RenderTarget::BuilderDetails {
     FRenderTarget::Attachment mAttachments[FRenderTarget::ATTACHMENT_COUNT] = {};
-    uint32_t mWidth{};
-    uint32_t mHeight{};
     uint8_t mSamples = 1;
-    // The number of layers for the render target. The value should be 1 except for multiview.
-    // If multiview is enabled, this value is appropriately updated based on the layerCount value
-    // from each attachment. Hence, #>1 means using multiview
-    uint8_t mLayerCount = 1;
 };
 
 using BuilderType = RenderTarget;
@@ -90,7 +87,7 @@ RenderTarget::Builder& RenderTarget::Builder::samples(uint8_t samples) noexcept 
     return *this;
 }
 
-RenderTarget* RenderTarget::Builder::build(Engine& engine) {
+RenderTarget* RenderTarget::Builder::build(Engine& engine) const {
     using backend::TextureUsage;
     const FRenderTarget::Attachment& color = mImpl->mAttachments[(size_t)AttachmentPoint::COLOR0];
     const FRenderTarget::Attachment& depth = mImpl->mAttachments[(size_t)AttachmentPoint::DEPTH];
@@ -143,13 +140,22 @@ RenderTarget* RenderTarget::Builder::build(Engine& engine) {
     FILAMENT_CHECK_PRECONDITION(minWidth == maxWidth && minHeight == maxHeight
             && minLayerCount == maxLayerCount) << "All attachments dimensions must match";
 
-    mImpl->mWidth  = minWidth;
-    mImpl->mHeight = minHeight;
-    if (minLayerCount > 0) {
-        // mLayerCount should be 1 except for multiview use where we update this variable
-        // to the number of layerCount for multiview.
-        mImpl->mLayerCount = minLayerCount;
+    // layerCount should be 1 except for multiview use where we update this variable
+    // to the number of layerCount for multiview.
+    uint8_t const layerCount = minLayerCount > 0 ? uint8_t(minLayerCount) : 1u;
+
+    // OpenGL bakes `layout(num_views = N)` into the GLSL from Engine::Config::stereoscopicEyeCount,
+    // and OVR_multiview requires N to equal the framebuffer's view count at draw time.
+    // Otherwise the draw silently fails with GL_INVALID_OPERATION, so reject the mismatch here.
+    Engine::Config const& config = downcast(engine).getConfig();
+    if (UTILS_UNLIKELY(layerCount > 1 && downcast(engine).getBackend() == Backend::OPENGL &&
+            config.stereoscopicType == Engine::StereoscopicType::MULTIVIEW)) {
+        FILAMENT_CHECK_PRECONDITION(layerCount == config.stereoscopicEyeCount)
+                << "layerCount (" << +layerCount
+                << ") must match Engine::Config::stereoscopicEyeCount ("
+                << config.stereoscopicEyeCount << ") when using multiview on the OpenGL backend";
     }
+
     return downcast(engine).createRenderTarget(*this);
 }
 
@@ -160,6 +166,20 @@ FRenderTarget::FRenderTarget(FEngine& engine, const Builder& builder)
       mSupportsReadPixels(false) {
     std::copy(std::begin(builder.mImpl->mAttachments), std::end(builder.mImpl->mAttachments),
             std::begin(mAttachments));
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint8_t layerCount = 1;
+    for (auto const& attachment : mAttachments) {
+        if (UTILS_LIKELY(attachment.texture)) {
+            width = attachment.texture->getWidth(attachment.mipLevel);
+            height = attachment.texture->getHeight(attachment.mipLevel);
+            if (UTILS_UNLIKELY(attachment.layerCount > 0)) {
+                layerCount = attachment.layerCount;
+            }
+            break;
+        }
+    }
 
     MRT mrt{};
     TargetBufferInfo dinfo{};
@@ -216,8 +236,8 @@ FRenderTarget::FRenderTarget(FEngine& engine, const Builder& builder)
 
     FEngine::DriverApi& driver = engine.getDriverApi();
     mHandle = driver.createRenderTarget(mAttachmentMask,
-            builder.mImpl->mWidth, builder.mImpl->mHeight, builder.mImpl->mSamples,
-            builder.mImpl->mLayerCount, mrt, dinfo, {},
+            width, height, builder.mImpl->mSamples,
+            layerCount, mrt, dinfo, {},
             utils::ImmutableCString{ builder.getName() });
 }
 

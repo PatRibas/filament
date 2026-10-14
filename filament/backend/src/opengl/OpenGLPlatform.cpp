@@ -130,6 +130,10 @@ OpenGLPlatform::ContextType OpenGLPlatform::getCurrentContextType() const noexce
     return ContextType::UNPROTECTED;
 }
 
+bool OpenGLPlatform::isPresentationTimeSupported() const noexcept {
+    return false;
+}
+
 void OpenGLPlatform::setPresentationTime(
         UTILS_UNUSED int64_t presentationTimeInNanosecond) noexcept {
 }
@@ -214,6 +218,11 @@ bool OpenGLPlatform::setExternalImage(
         UTILS_UNUSED void* externalImage,
         UTILS_UNUSED ExternalTexture* texture) noexcept {
     return false;
+}
+
+uint8_t OpenGLPlatform::getExternalImageMipLevels(
+        UTILS_UNUSED ExternalImageHandleRef externalImage) const noexcept {
+    return 1;
 }
 
 AcquiredImage OpenGLPlatform::transformAcquiredImage(AcquiredImage source) noexcept {

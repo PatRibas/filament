@@ -635,6 +635,9 @@ PostProcessManager::StructurePassOutput PostProcessManager::structure(FrameGraph
 
     fg.addPass<StructureMipmapData>("StructureMipmap",
             [&](FrameGraph::Builder& builder, auto& data) {
+                if (levelCount > 1) {
+                    builder.reserveRenderTargets(levelCount - 1);
+                }
                 data.depth = builder.sample(depth);
                 for (size_t i = 1; i < levelCount; i++) {
                     auto out = builder.createSubresource(data.depth, "Structure mip", {
@@ -1341,6 +1344,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::gaussianBlurPass(FrameGraph&
                 // note: we don't systematically use a Sampler2D for the temp buffer because
                 // this could force us to use two different programs below
 
+                builder.reserveRenderTargets(2);
                 data.in = builder.sample(input);
                 data.temp = builder.createTexture("Horizontal temporary buffer", tempDesc);
                 data.temp = builder.sample(data.temp);
@@ -1872,6 +1876,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::dof(FrameGraph& fg,
 
     auto const& ppDoFMipmap = fg.addPass<PostProcessDofMipmap>("DoF Mipmap",
             [&](FrameGraph::Builder& builder, auto& data) {
+                builder.reserveRenderTargets(mipmapCount - 1u);
                 data.inOutColor = builder.sample(ppDoFDownsample->outColor);
                 data.inOutCoc   = builder.sample(ppDoFDownsample->outCoc);
                 for (size_t i = 0; i < mipmapCount - 1u; i++) {
@@ -2361,6 +2366,7 @@ PostProcessManager::BloomPassOutput PostProcessManager::bloom(FrameGraph& fg,
 
     auto const& bloomDownsamplePass = fg.addPass<BloomPassData>("Bloom Downsample",
             [&](FrameGraph::Builder& builder, auto& data) {
+                builder.reserveRenderTargets(inoutBloomOptions.levels);
                 data.out = builder.createTexture("Bloom Out Texture", {
                         .width = width,
                         .height = height,
@@ -2429,6 +2435,7 @@ PostProcessManager::BloomPassOutput PostProcessManager::bloom(FrameGraph& fg,
 
     auto const& bloomUpsamplePass = fg.addPass<BloomPassData>("Bloom Upsample",
             [&](FrameGraph::Builder& builder, auto& data) {
+                builder.reserveRenderTargets(inoutBloomOptions.levels);
                 data.out = builder.sample(input);
                 for (size_t i = 0; i < inoutBloomOptions.levels; i++) {
                     auto out = builder.createSubresource(data.out, "Bloom Out Texture mip",
@@ -2683,7 +2690,7 @@ void PostProcessManager::clearAncillaryBuffers(DriverApi& driver,
 void PostProcessManager::fogPrepare(DriverApi& driver) noexcept {
     // ensures the material is loaded and material instance created
     auto const& material = getPostProcessMaterial("fog");
-    FMaterial const* const ma = material.getMaterial(mEngine);
+    FMaterial* const ma = material.getMaterial(mEngine);
     FMaterialInstance const* mi = ma->getDefaultInstance();
     mi->commit(driver, getUboManager());
 }
@@ -2694,7 +2701,7 @@ void PostProcessManager::fog(DriverApi& driver) noexcept {
     bindPerRenderableDescriptorSet(driver);
 
     auto const& material = getPostProcessMaterial("fog");
-    FMaterial const* const ma = material.getMaterial(mEngine);
+    FMaterial* const ma = material.getMaterial(mEngine);
     FMaterialInstance const* mi = ma->getDefaultInstance();
     mi->use(driver);
 

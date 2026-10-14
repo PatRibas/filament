@@ -24,6 +24,9 @@
 
 #include <backend/DriverEnums.h>
 
+#include <utils/compiler.h>
+#include <utils/debug.h>
+
 using namespace bluevk;
 
 namespace filament::backend {
@@ -42,6 +45,16 @@ VulkanBufferProxy::VulkanBufferProxy(VulkanContext const& context, VmaAllocator 
 void VulkanBufferProxy::loadFromCpu(VulkanCommandBuffer& commands, const void* cpuData,
         uint32_t byteOffset, uint32_t numBytes) {
 
+    // The frontend is what actually enforces this, via always-on preconditions on setBuffer() and
+    // friends. This is only a debug-time invariant check on internal callers, catching a bad range
+    // before it reaches the memcpy below or the vkCmdCopyBuffer on the staging path.
+    // Note that VulkanBufferCache recycles pooled allocations, so `capacity` is the size of the
+    // underlying allocation, which may exceed the logical size the frontend asked for; this is an
+    // upper bound and cannot be tightened to an exact-size check.
+    // Written as two comparisons so that a large byteOffset cannot wrap around.
+    UTILS_UNUSED_IN_RELEASE uint32_t const capacity = mBuffer->getGpuBuffer()->numBytes;
+    assert_invariant(numBytes <= capacity && byteOffset <= capacity - numBytes);
+
     // This means that the buffer is not currently in use by the GPU
     bool const isAvailable = mBuffer->getCount() == 1;
 
@@ -51,12 +64,10 @@ void VulkanBufferProxy::loadFromCpu(VulkanCommandBuffer& commands, const void* c
     // Check if we can just memcpy directly to the GPU memory.
     bool const isMemcopyable = mBuffer->getGpuBuffer()->allocationInfo.pMappedData != nullptr;
 
-    // In the case the content is marked as memory mapped or static, is guaranteed to be safe to do
-    // a memcpy if its available.
-    bool const isStaticOrShared =
-            any(mUsage & (BufferUsage::STATIC | BufferUsage::SHARED_WRITE_BIT));
-    bool const useMemcpy =
-            ((isAvailable && mStagingBufferBypassEnabled) || isStaticOrShared) && isMemcopyable;
+    // If the buffer is marked as shared, it is guaranteed to be safe to do a memcpy.
+    bool const isShared = any(mUsage & BufferUsage::SHARED_WRITE_BIT);
+    bool const isSafeToWrite = (isAvailable && mStagingBufferBypassEnabled) || isShared;
+    bool const useMemcpy = isSafeToWrite && isMemcopyable;
     if (useMemcpy) {
         char* dest = static_cast<char*>(mBuffer->getGpuBuffer()->allocationInfo.pMappedData) +
                      byteOffset;

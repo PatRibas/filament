@@ -35,6 +35,8 @@
 #include <android/hardware_buffer.h>
 #include <android/native_window.h>
 
+#include <algorithm>
+#include <cmath>
 #include <new>
 #include <utility>
 
@@ -123,13 +125,13 @@ std::pair<TextureFormat, TextureUsage> getFilamentFormatAndUsage(const AHardware
 }
 
 uint32_t selectMemoryTypeForExternalImage(VkPhysicalDevice physicalDevice, VkDevice device,
-        VkImage image, uint32_t types, VkFlags requiredMemoryFlags) {
+        VkImage image, uint32_t types, VkFlags requiredMemoryFlags, bool enableRenderDocCapture) {
     VkPhysicalDeviceMemoryProperties memoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
     uint32_t const memoryTypeIndex =
             VulkanContext::selectMemoryType(memoryProperties, types, requiredMemoryFlags);
 
-    if constexpr (FVK_RENDERDOC_CAPTURE_MODE) {
+    if (enableRenderDocCapture) {
         // RenderDoc will replay external resources as non-external.
         // Adjust properties that will trip it up when replaying, even though these are not valid.
         // Update memory type index if necessary so that we can replay the capture.
@@ -291,6 +293,15 @@ VulkanPlatform::ExternalImageMetadata VulkanPlatformAndroid::extractExternalImag
         metadata.samples = VK_SAMPLE_COUNT_1_BIT;
         metadata.isStagingRequired = isSoftwareDecodedYUV(bufferDesc.format, bufferDesc.usage);
 
+        // Calculate mip levels. Use ilogbf (exact, exponent-based) instead of floor(log2(...)) to
+        // avoid an off-by-one for power-of-two dimensions. Mirrors FTexture::maxLevelCount().
+        if (bufferDesc.usage & AHARDWAREBUFFER_USAGE_GPU_MIPMAP_COMPLETE) {
+            uint32_t const maxDimension = std::max(bufferDesc.width, bufferDesc.height);
+            metadata.mipLevels = std::max(1, std::ilogbf(float(maxDimension)) + 1);
+        } else {
+            metadata.mipLevels = 1;
+        }
+
         // Get the VkFormat directly from the driver.
         VkAndroidHardwareBufferFormatPropertiesANDROID formatInfo = {
             .sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID,
@@ -393,6 +404,7 @@ VulkanPlatform::ImageData VulkanPlatformAndroid::createVkImageFromExternal(
 
     VkDevice const device = getDevice();
     VkPhysicalDevice const physicalDevice = getPhysicalDevice();
+    bool const renderDocCaptureEnabled = isRenderDocCaptureEnabled();
     auto buildImage = [&](ExternalImageMetadata const& metadata) {
         bool const isExternalFormat = metadata.isChromaConversionRequired &&
             !metadata.isStagingRequired;
@@ -440,7 +452,7 @@ VulkanPlatform::ImageData VulkanPlatformAndroid::createVkImageFromExternal(
                 metadata.height,
                 1u,
             },
-            .mipLevels = 1,
+            .mipLevels = metadata.mipLevels,
             .arrayLayers = metadata.layers,
             .samples = metadata.samples,
             .usage = metadata.usage,
@@ -476,7 +488,7 @@ VulkanPlatform::ImageData VulkanPlatformAndroid::createVkImageFromExternal(
         }
 
         uint32_t const memoryTypeIndex = selectMemoryTypeForExternalImage(physicalDevice, device,
-                image, metadata.memoryTypeBits, requiredMemoryFlags);
+                image, metadata.memoryTypeBits, requiredMemoryFlags, renderDocCaptureEnabled);
 
         VkMemoryAllocateInfo const allocInfo = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,

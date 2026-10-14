@@ -114,6 +114,13 @@ public:
     void prepareDirectionalLight(FEngine& engine, float exposure,
             math::float3 const& sceneSpaceDirection, LightManagerInstance instance) noexcept;
 
+    // Directional lights in addition to the dominant one, evaluated without shadows.
+    // `sceneSpaceDirections` and `instances` are parallel arrays of `count` elements,
+    // with count <= CONFIG_MAX_EXTRA_DIRECTIONAL_LIGHTS.
+    void prepareExtraDirectionalLights(FEngine& engine, float exposure, size_t count,
+            math::float3 const* sceneSpaceDirections,
+            LightManagerInstance const* instances) noexcept;
+
     void prepareAmbientLight(FEngine const& engine,
             FIndirectLight const& ibl, float intensity, float exposure) noexcept;
 
@@ -123,8 +130,6 @@ public:
             VsmShadowOptions const& options) noexcept;
 
     void prepareShadowPCF(TextureHandle texture) noexcept;
-
-    void prepareShadowDPCF(TextureHandle texture) noexcept;
 
     void prepareShadowPCSS(TextureHandle texture) noexcept;
 

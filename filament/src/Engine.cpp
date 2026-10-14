@@ -21,6 +21,7 @@
 #include "details/BufferObject.h"
 #include "details/Camera.h"
 #include "details/Fence.h"
+#include "details/FramePacer.h"
 #include "details/IndexBuffer.h"
 #include "details/IndirectLight.h"
 #include "details/Material.h"
@@ -123,6 +124,10 @@ Camera* Engine::getCameraComponent(Entity const entity) noexcept {
     return downcast(this)->getCameraComponent(entity);
 }
 
+Camera const* Engine::getCameraComponent(Entity const entity) const noexcept {
+    return downcast(this)->getCameraComponent(entity);
+}
+
 void Engine::destroyCameraComponent(Entity const entity) noexcept {
     downcast(this)->destroyCameraComponent(entity);
 }
@@ -181,6 +186,10 @@ void Engine::dispatch(const MaterialInstance* materialInstance,
 }
 
 bool Engine::destroy(const Renderer* p) {
+    return downcast(this)->destroy(downcast(p));
+}
+
+bool Engine::destroy(const FramePacer* p) {
     return downcast(this)->destroy(downcast(p));
 }
 
@@ -382,7 +391,7 @@ void Engine::flush() {
     downcast(this)->flush();
 }
 
-EntityManager& Engine::getEntityManager() noexcept {
+EntityManager& Engine::getEntityManager() const noexcept {
     return downcast(this)->getEntityManager();
 }
 
@@ -390,11 +399,23 @@ RenderableManager& Engine::getRenderableManager() noexcept {
     return downcast(this)->getRenderableManager();
 }
 
+RenderableManager const& Engine::getRenderableManager() const noexcept {
+    return downcast(this)->getRenderableManager();
+}
+
 LightManager& Engine::getLightManager() noexcept {
     return downcast(this)->getLightManager();
 }
 
+LightManager const& Engine::getLightManager() const noexcept {
+    return downcast(this)->getLightManager();
+}
+
 TransformManager& Engine::getTransformManager() noexcept {
+    return downcast(this)->getTransformManager();
+}
+
+TransformManager const& Engine::getTransformManager() const noexcept {
     return downcast(this)->getTransformManager();
 }
 
@@ -415,7 +436,7 @@ void Engine::execute() {
     downcast(this)->execute();
 }
 
-JobSystem& Engine::getJobSystem() noexcept {
+JobSystem& Engine::getJobSystem() const noexcept {
     return downcast(this)->getJobSystem();
 }
 
@@ -432,6 +453,10 @@ void Engine::setPaused(bool const paused) {
 }
 
 DebugRegistry& Engine::getDebugRegistry() noexcept {
+    return downcast(this)->getDebugRegistry();
+}
+
+DebugRegistry const& Engine::getDebugRegistry() const noexcept {
     return downcast(this)->getDebugRegistry();
 }
 

@@ -270,6 +270,11 @@ void OpenGLState::unbindTexture(
 }
 
 void OpenGLState::unbindTextureUnit(GLuint unit) noexcept {
+    assert_invariant(unit < MAX_TEXTURE_UNIT_COUNT);
+    // see bindSampler(): `unit` is ultimately driven by the material file.
+    if (UTILS_VERY_UNLIKELY(unit >= MAX_TEXTURE_UNIT_COUNT)) {
+        return;
+    }
     update_state(state.textures.units[unit].id, 0u, [&]() {
         activeTexture(unit);
         glBindTexture(state.textures.units[unit].target, 0u);
@@ -322,6 +327,13 @@ void OpenGLState::deleteBuffer(GLuint buffer, GLenum target) noexcept {
         }
     }
 #endif
+}
+
+void OpenGLState::unbindBuffer(GLenum target, GLuint buffer) noexcept {
+    size_t const targetIndex = getIndexForBufferTarget(target);
+    if (buffer && state.buffers.genericBinding[targetIndex] == buffer) {
+        bindBuffer(target, 0);
+    }
 }
 
 void OpenGLState::deleteVertexArray(GLuint vao) noexcept {

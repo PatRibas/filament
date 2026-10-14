@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+#include "GlbBuilders.h"
+#include "Utility.h"
+
+#include "extended/TangentsJobExtended.h"
+
 #include "materials/uberarchive.h"
 
 #include <gltfio/AssetLoader.h>
@@ -36,9 +41,10 @@
 #include <utils/Path.h>
 
 #include <math/mathfwd.h>
+#include <math/vec3.h>
 
+#include <cgltf.h>
 #include <gtest/gtest.h>
-#include <meshoptimizer.h>
 
 #include <cstdint>
 #include <cstring>
@@ -55,6 +61,7 @@ using namespace filament;
 using namespace backend;
 using namespace gltfio;
 using namespace utils;
+using namespace test;
 
 char const* ANIMATED_MORPH_CUBE_GLB = "AnimatedMorphCube.glb";
 char const* DAMAGED_HELMET_WEBP_GLB = "DamagedHelmetWebp.glb";
@@ -75,83 +82,32 @@ static std::ifstream::pos_type getFileSize(const char* filename) {
 
 namespace {
 
-static void appendU32LE(std::vector<uint8_t>& dst, uint32_t value) {
-    dst.push_back(uint8_t(value & 0xffu));
-    dst.push_back(uint8_t((value >> 8u) & 0xffu));
-    dst.push_back(uint8_t((value >> 16u) & 0xffu));
-    dst.push_back(uint8_t((value >> 24u) & 0xffu));
-}
+static bool runDecodeMeshopt(cgltf_meshopt_compression_mode mode, size_t count, size_t stride,
+        cgltf_meshopt_compression_filter filter = cgltf_meshopt_compression_filter_none,
+        cgltf_buffer* bufferOverride = nullptr, size_t offset = 0, size_t size = 32,
+        bool provideBuffer = true) {
+    uint8_t dummyBuffer[32] = {0};
+    cgltf_buffer buffer{};
+    buffer.data = dummyBuffer;
+    buffer.size = sizeof(dummyBuffer);
 
-static std::vector<uint8_t> makeMeshoptPayload(size_t vertexCount, size_t stride) {
-    std::vector<uint8_t> vertices(vertexCount * stride, 0);
-    std::vector<uint8_t> encoded(meshopt_encodeVertexBufferBound(vertexCount, stride));
-    const size_t encodedSize = meshopt_encodeVertexBuffer(encoded.data(), encoded.size(),
-            vertices.data(), vertexCount, stride);
-    EXPECT_GT(encodedSize, 0u);
-    encoded.resize(encodedSize);
-    return encoded;
-}
+    cgltf_buffer_view bufferView{};
+    bufferView.has_meshopt_compression = true;
+    bufferView.meshopt_compression.buffer = provideBuffer
+            ? (bufferOverride ? bufferOverride : &buffer)
+            : nullptr;
+    bufferView.meshopt_compression.offset = offset;
+    bufferView.meshopt_compression.size = size;
+    bufferView.meshopt_compression.mode = mode;
+    bufferView.meshopt_compression.count = count;
+    bufferView.meshopt_compression.stride = stride;
+    bufferView.meshopt_compression.filter = filter;
 
-static std::string makeMeshoptGlbJson(size_t meshoptCount, size_t meshoptEncodedSize,
-        size_t bufferByteLength, size_t stride) {
-    const size_t decodedSize = meshoptCount * stride;
-    return std::string(R"({
-  "asset": { "version": "2.0" },
-  "extensionsUsed": ["EXT_meshopt_compression"],
-  "buffers": [
-    { "byteLength": )") + std::to_string(bufferByteLength) + R"( }
-  ],
-  "bufferViews": [
-    {
-      "buffer": 0,
-      "byteOffset": 0,
-      "byteLength": )" + std::to_string(decodedSize) + R"(,
-      "extensions": {
-        "EXT_meshopt_compression": {
-          "buffer": 0,
-          "byteOffset": 0,
-          "byteLength": )" + std::to_string(meshoptEncodedSize) + R"(,
-          "byteStride": )" + std::to_string(stride) + R"(,
-          "count": )" + std::to_string(meshoptCount) + R"(,
-          "mode": "ATTRIBUTES",
-          "filter": "NONE"
-        }
-      }
-    }
-  ],
-  "nodes": [],
-  "scenes": [
-    { "nodes": [] }
-  ],
-  "scene": 0
-})";
-}
+    cgltf_data data{};
+    data.buffer_views_count = 1;
+    data.buffer_views = &bufferView;
 
-static std::vector<uint8_t> makeMeshoptGlb(size_t meshoptCount, size_t stride) {
-    static constexpr size_t kEncodedVertexCount = 256;
-    const std::vector<uint8_t> meshopt = makeMeshoptPayload(kEncodedVertexCount, stride);
-
-    std::string json = makeMeshoptGlbJson(meshoptCount, meshopt.size(), meshopt.size(), stride);
-    while ((json.size() % 4u) != 0u) {
-        json.push_back(' ');
-    }
-
-    const uint32_t jsonSize = uint32_t(json.size());
-    const uint32_t binSize = uint32_t(meshopt.size());
-    const uint32_t totalSize = 12u + 8u + jsonSize + 8u + binSize;
-
-    std::vector<uint8_t> glb;
-    glb.reserve(totalSize);
-    appendU32LE(glb, 0x46546c67u);
-    appendU32LE(glb, 2u);
-    appendU32LE(glb, totalSize);
-    appendU32LE(glb, jsonSize);
-    appendU32LE(glb, 0x4e4f534au);
-    glb.insert(glb.end(), json.begin(), json.end());
-    appendU32LE(glb, binSize);
-    appendU32LE(glb, 0x004e4942u);
-    glb.insert(glb.end(), meshopt.begin(), meshopt.end());
-    return glb;
+    return utility::decodeMeshoptCompression(&data);
 }
 
 } // namespace
@@ -211,6 +167,7 @@ public:
         delete mKtxDecoder;
         delete mWebpDecoder;
 
+        mAssetLoader->gc();
         AssetLoader::destroy(&mAssetLoader);
     }
 
@@ -253,6 +210,8 @@ protected:
         Engine::destroy(&mEngine);
 
         delete mMaterialProvider;
+
+        mNameManager->gc();
         delete mNameManager;
     }
 };
@@ -378,7 +337,7 @@ TEST_F(glTFIOTest, DamagedHelmetWebpMaterials) {
 #else
     EXPECT_FALSE(isWebpSupported());
     EXPECT_TRUE(mData[DAMAGED_HELMET_WEBP_GLB]->mWebpDecoder == nullptr);
-    EXPECT_EQ(mEngine->getTextureCount(), 3);    
+    EXPECT_EQ(mEngine->getTextureCount(), 3);
 #endif
 }
 
@@ -399,6 +358,117 @@ TEST_F(glTFIOTest, MeshoptAllocationFailureRejectsGracefully) {
 
     assetLoader->destroyAsset(asset);
     AssetLoader::destroy(&assetLoader);
+}
+
+TEST_F(glTFIOTest, MeshoptRejectsInvalidTrianglesCount) {
+    const std::vector<uint8_t> glb = makeMeshoptGlb(1, 4, "TRIANGLES", "NONE");
+
+    AssetLoader* assetLoader = AssetLoader::create({mEngine, mMaterialProvider, mNameManager});
+    ASSERT_NE(assetLoader, nullptr);
+
+    FilamentAsset* asset = assetLoader->createAsset(glb.data(), uint32_t(glb.size()));
+    ASSERT_NE(asset, nullptr);
+
+    ResourceLoader resourceLoader({mEngine, ".", false});
+    EXPECT_FALSE(resourceLoader.loadResources(asset));
+
+    assetLoader->destroyAsset(asset);
+    AssetLoader::destroy(&assetLoader);
+}
+
+TEST_F(glTFIOTest, MeshoptRejectsInvalidTrianglesStride) {
+    const std::vector<uint8_t> glb = makeMeshoptGlb(3, 3, "TRIANGLES", "NONE");
+
+    AssetLoader* assetLoader = AssetLoader::create({mEngine, mMaterialProvider, mNameManager});
+    ASSERT_NE(assetLoader, nullptr);
+
+    FilamentAsset* asset = assetLoader->createAsset(glb.data(), uint32_t(glb.size()));
+    ASSERT_NE(asset, nullptr);
+
+    ResourceLoader resourceLoader({mEngine, ".", false});
+    EXPECT_FALSE(resourceLoader.loadResources(asset));
+
+    assetLoader->destroyAsset(asset);
+    AssetLoader::destroy(&assetLoader);
+}
+
+TEST_F(glTFIOTest, MeshoptRejectsInvalidIndicesStride) {
+    const std::vector<uint8_t> glb = makeMeshoptGlb(1, 1, "INDICES", "NONE");
+
+    AssetLoader* assetLoader = AssetLoader::create({mEngine, mMaterialProvider, mNameManager});
+    ASSERT_NE(assetLoader, nullptr);
+
+    FilamentAsset* asset = assetLoader->createAsset(glb.data(), uint32_t(glb.size()));
+    ASSERT_NE(asset, nullptr);
+
+    ResourceLoader resourceLoader({mEngine, ".", false});
+    EXPECT_FALSE(resourceLoader.loadResources(asset));
+
+    assetLoader->destroyAsset(asset);
+    AssetLoader::destroy(&assetLoader);
+}
+
+TEST_F(glTFIOTest, MeshoptPreconditions) {
+    // Mode ATTRIBUTES: stride must be a multiple of 4 and <= 256.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 3));
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 260));
+
+    // Mode TRIANGLES: count must be a multiple of 3.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_triangles, 4, 2));
+
+    // Mode TRIANGLES / INDICES: stride must be 2 or 4.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_triangles, 6, 1));
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_triangles, 6, 3));
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_indices, 4, 1));
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_indices, 4, 3));
+
+    // Mode TRIANGLES / INDICES: filters are disallowed.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_triangles, 6, 2,
+            cgltf_meshopt_compression_filter_octahedral));
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_indices, 4, 2,
+            cgltf_meshopt_compression_filter_exponential));
+
+    // Unsupported mode.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_invalid, 4, 4));
+
+    // Filter OCTAHEDRAL: stride must be 4 or 8.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 12,
+            cgltf_meshopt_compression_filter_octahedral));
+
+    // Filter QUATERNION: stride must be 8.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 4,
+            cgltf_meshopt_compression_filter_quaternion));
+
+    // Filter EXPONENTIAL: stride must be a multiple of 4.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 6,
+            cgltf_meshopt_compression_filter_exponential));
+
+    // Unsupported filter.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 4,
+            cgltf_meshopt_compression_filter_max_enum));
+
+    // Mode ATTRIBUTES: count exceeds theoretical maximum.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes,
+            std::numeric_limits<size_t>::max(), 4));
+
+    // Missing buffer.
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 4,
+            cgltf_meshopt_compression_filter_none, nullptr, 0, 32, /*provideBuffer=*/false));
+
+    // Null buffer data.
+    cgltf_buffer nullDataBuffer{};
+    nullDataBuffer.data = nullptr;
+    nullDataBuffer.size = 32;
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 4,
+            cgltf_meshopt_compression_filter_none, &nullDataBuffer));
+
+    // Buffer bounds exceeded.
+    uint8_t dummyPayload[16] = {0};
+    cgltf_buffer boundedBuffer{};
+    boundedBuffer.data = dummyPayload;
+    boundedBuffer.size = sizeof(dummyPayload);
+    EXPECT_FALSE(runDecodeMeshopt(cgltf_meshopt_compression_mode_attributes, 4, 4,
+            cgltf_meshopt_compression_filter_none, &boundedBuffer, /*offset=*/8, /*size=*/16));
 }
 
 // A mesh may carry morph-target names (mesh.extras.targetNames) whose count is parsed independently
@@ -462,94 +532,211 @@ TEST_F(glTFIOTest, MorphTargetsExceedingMaxDoNotOverflow) {
     AssetLoader::destroy(&assetLoader);
 }
 
-namespace {
+TEST_F(glTFIOTest, MorphTargetsExceedingMaxComputeTangents) {
+    AssetLoader* assetLoader = AssetLoader::create({ mEngine, mMaterialProvider, mNameManager });
+    ASSERT_NE(assetLoader, nullptr);
 
-static std::vector<uint8_t> makeMalformedEightBitIndexGlb(uint32_t indexCount) {
-    std::string json = std::string(R"({
-  "asset": { "version": "2.0" },
-  "extensionsUsed": ["KHR_materials_unlit"],
-  "buffers": [
-    { "byteLength": 13 }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 12 },
-    { "buffer": 0, "byteOffset": 12, "byteLength": 1 }
-  ],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5126,
-      "count": 1,
-      "type": "VEC3",
-      "min": [0, 0, 0],
-      "max": [0, 0, 0]
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5121,
-      "count": )") +
-            std::to_string(indexCount) +
-            R"(,
-      "type": "SCALAR"
-    }
-  ],
-  "materials": [
-    {
-      "extensions": {
-        "KHR_materials_unlit": {}
-      }
-    }
-  ],
-  "meshes": [
-    {
-      "primitives": [
-        {
-          "attributes": { "POSITION": 0 },
-          "indices": 1,
-          "material": 0
-        }
-      ]
-    }
-  ],
-  "nodes": [
-    { "mesh": 0 }
-  ],
-  "scenes": [
-    { "nodes": [0] }
-  ],
-  "scene": 0
-})";
+    // 20,000 morph targets exceeds both MAX_MORPH_TARGETS (256) and JobSystem::MAX_JOB_COUNT (16,384).
+    std::vector<uint8_t> glb = makeMorphTargetGlb(20000);
+    FilamentAsset* const asset = assetLoader->createAsset(glb.data(), uint32_t(glb.size()));
+    ASSERT_NE(asset, nullptr);
 
-    while ((json.size() % 4u) != 0u) {
-        json.push_back(' ');
-    }
+    ResourceLoader resourceLoader({ mEngine, ".", false });
+    EXPECT_TRUE(resourceLoader.loadResources(asset));
 
-    std::vector<uint8_t> bin(13, 0);
-    while ((bin.size() % 4u) != 0u) {
-        bin.push_back(0);
-    }
+    ASSERT_EQ(asset->getRenderableEntityCount(), 1u);
+    Entity const renderable = asset->getRenderableEntities()[0];
+    EXPECT_EQ(asset->getMorphTargetCountAt(renderable), MAX_MORPH_TARGETS);
 
-    const uint32_t jsonSize = uint32_t(json.size());
-    const uint32_t binSize = uint32_t(bin.size());
-    const uint32_t totalSize = 12u + 8u + jsonSize + 8u + binSize;
+    auto const& renderableManager = mEngine->getRenderableManager();
+    auto const inst = renderableManager.getInstance(renderable);
+    EXPECT_EQ(renderableManager.getMorphTargetCount(inst), MAX_MORPH_TARGETS);
+    ASSERT_NE(renderableManager.getMorphTargetBuffer(inst), nullptr);
+    EXPECT_EQ(renderableManager.getMorphTargetBuffer(inst)->getCount(), MAX_MORPH_TARGETS);
 
-    std::vector<uint8_t> glb;
-    glb.reserve(totalSize);
-
-    appendU32LE(glb, 0x46546c67u);
-    appendU32LE(glb, 2u);
-    appendU32LE(glb, totalSize);
-    appendU32LE(glb, jsonSize);
-    appendU32LE(glb, 0x4e4f534au);
-    glb.insert(glb.end(), json.begin(), json.end());
-    appendU32LE(glb, binSize);
-    appendU32LE(glb, 0x004e4942u);
-    glb.insert(glb.end(), bin.begin(), bin.end());
-
-    return glb;
+    assetLoader->destroyAsset(asset);
+    AssetLoader::destroy(&assetLoader);
 }
 
-} // namespace
+// Loads `glb` through the extended loader, uploads its resources, and checks that the single
+// renderable exposes `expectedMorphTargets` morph targets. Out-of-bounds accesses are caught under
+// ASan, and the slot bookkeeping invariants are checked by assert_invariant in debug builds.
+static void loadExtendedMorphAsset(Engine* engine, MaterialProvider* materials,
+        NameComponentManager* names, std::vector<uint8_t> const& glb,
+        size_t expectedMorphTargets) {
+    AssetConfigurationExtended ext{ .gltfPath = "." };
+    AssetLoader* assetLoader = AssetLoader::create({
+            .engine = engine, .materials = materials, .names = names, .ext = &ext });
+    ASSERT_NE(assetLoader, nullptr);
+
+    FilamentAsset* const asset = assetLoader->createAsset(glb.data(), uint32_t(glb.size()));
+    ASSERT_NE(asset, nullptr);
+
+    ResourceLoader resourceLoader({ engine, ".", false });
+    EXPECT_TRUE(resourceLoader.loadResources(asset));
+
+    ASSERT_EQ(asset->getRenderableEntityCount(), 1u);
+    EXPECT_EQ(asset->getMorphTargetCountAt(asset->getRenderableEntities()[0]),
+            expectedMorphTargets);
+
+    assetLoader->destroyAsset(asset);
+    AssetLoader::destroy(&assetLoader);
+}
+
+// Issue #10180: with no material, a POSITION-only target preceding a target with TANGENT used to be
+// dropped from the extended loader's morph target list, which made slotIndices too small for the
+// raw index of the later target.
+TEST_F(glTFIOTest, ExtendedMorphTargetsWithoutMaterialDoNotOverflow) {
+    if (!AssetConfigurationExtended::isSupported()) {
+        GTEST_SKIP() << "The extended asset loader is not supported on this platform.";
+    }
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeSparseTangentMorphGlb(2, 1, MorphMaterial::NONE), 2u);
+}
+
+// Issue #10500: with an unlit material, only targets with TANGENT used to be kept, so a single
+// high-indexed target with TANGENT wrote far past the end of slotIndices.
+TEST_F(glTFIOTest, ExtendedMorphTargetsWithUnlitMaterialDoNotOverflow) {
+    if (!AssetConfigurationExtended::isSupported()) {
+        GTEST_SKIP() << "The extended asset loader is not supported on this platform.";
+    }
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeSparseTangentMorphGlb(10, 9, MorphMaterial::UNLIT), 10u);
+}
+
+// A lit material exercises the path that computes morphed tangent frames for every target. Without
+// UVs, the provided tangents are used. With UVs, mikktspace is used, and it remeshes.
+TEST_F(glTFIOTest, ExtendedMorphTargetsWithLitMaterial) {
+    if (!AssetConfigurationExtended::isSupported()) {
+        GTEST_SKIP() << "The extended asset loader is not supported on this platform.";
+    }
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeSparseTangentMorphGlb(10, 9, MorphMaterial::LIT), 10u);
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeSparseTangentMorphGlb(10, 9, MorphMaterial::LIT, /* withColors = */ false,
+                    /* withUvs = */ true),
+            10u);
+}
+
+// A morph target job passes its position deltas through the COLORS auxiliary attribute. A base
+// COLOR_0 attribute used to overwrite (or leak) that storage depending on hash map iteration order.
+// This runs the job directly and requires that the output positions are exactly the morph deltas.
+static void expectMorphJobPositionsAreDeltas(MorphMaterial material) {
+    std::vector<uint8_t> const glb =
+            makeSparseTangentMorphGlb(2, 1, material, /* withColors = */ true);
+
+    cgltf_options options{};
+    cgltf_data* data = nullptr;
+    ASSERT_EQ(cgltf_parse(&options, glb.data(), glb.size(), &data), cgltf_result_success);
+    ASSERT_EQ(cgltf_load_buffers(&options, data, "."), cgltf_result_success);
+    ASSERT_EQ(data->meshes_count, 1u);
+    cgltf_primitive const* prim = &data->meshes[0].primitives[0];
+
+    for (int target = 0; target < 2; ++target) {
+        TangentsJobExtended::Params params{ .in = { .prim = prim, .morphTargetIndex = target } };
+        TangentsJobExtended::run(&params);
+        auto& out = params.out;
+
+        ASSERT_EQ(out.vertexCount, 3u);
+        ASSERT_NE(out.positions, nullptr);
+        for (int v = 0; v < 3; ++v) {
+            math::float3 const expected = sparseMorphPositionDelta(v);
+            EXPECT_FLOAT_EQ(out.positions[v].x, expected.x) << "target " << target << " v " << v;
+            EXPECT_FLOAT_EQ(out.positions[v].y, expected.y) << "target " << target << " v " << v;
+            EXPECT_FLOAT_EQ(out.positions[v].z, expected.z) << "target " << target << " v " << v;
+        }
+        // Morph target jobs do not produce colors.
+        EXPECT_EQ(out.colors, nullptr);
+
+        free(out.positions);
+        free(out.tbn);
+        free(out.triangles);
+    }
+    cgltf_free(data);
+}
+
+TEST(glTFIOTangentsJobExtended, MorphTargetWithBaseColorsUnlit) {
+    expectMorphJobPositionsAreDeltas(MorphMaterial::UNLIT);
+}
+
+TEST(glTFIOTangentsJobExtended, MorphTargetWithBaseColorsLit) {
+    expectMorphJobPositionsAreDeltas(MorphMaterial::LIT);
+}
+
+// End-to-end load of morph targets on a primitive with COLOR_0 through the extended loader.
+TEST_F(glTFIOTest, ExtendedMorphTargetsWithBaseColors) {
+    if (!AssetConfigurationExtended::isSupported()) {
+        GTEST_SKIP() << "The extended asset loader is not supported on this platform.";
+    }
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeSparseTangentMorphGlb(2, 1, MorphMaterial::NONE, /* withColors = */ true), 2u);
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeSparseTangentMorphGlb(2, 1, MorphMaterial::UNLIT, /* withColors = */ true), 2u);
+}
+
+// Runs the base and the morph target tangent-space jobs on the color edge GLB, and returns their
+// output vertex counts.
+static void runColorSeamJobs(MorphMaterial material, size_t* baseVertexCount,
+        size_t* morphVertexCount) {
+    std::vector<uint8_t> const glb = makeColorSeamMorphGlb(material);
+
+    cgltf_options options{};
+    cgltf_data* data = nullptr;
+    ASSERT_EQ(cgltf_parse(&options, glb.data(), glb.size(), &data), cgltf_result_success);
+    ASSERT_EQ(cgltf_load_buffers(&options, data, "."), cgltf_result_success);
+    ASSERT_EQ(data->meshes_count, 1u);
+    cgltf_primitive const* prim = &data->meshes[0].primitives[0];
+
+    auto runJob = [prim](int morphTargetIndex) {
+        TangentsJobExtended::Params params{
+                .in = { .prim = prim, .morphTargetIndex = morphTargetIndex } };
+        TangentsJobExtended::run(&params);
+        auto& out = params.out;
+        size_t const vertexCount = out.vertexCount;
+        free(out.triangles);
+        free(out.tbn);
+        free(out.uv0);
+        free(out.uv1);
+        free(out.positions);
+        free(out.joints);
+        free(out.weights);
+        free(out.colors);
+        return vertexCount;
+    };
+    *baseVertexCount = runJob(TangentsJobExtended::kMorphTargetUnused);
+    *morphVertexCount = runJob(0);
+    cgltf_free(data);
+}
+
+// Guards the premise of ExtendedMorphTargetsWithColorSeam: with a lit material, mikktspace welds
+// the morph target vertices differently from the base vertices. If this ever stops being true
+// (e.g. once morph data is mapped through the triangle corners), the loader test below no longer
+// exercises the mismatch path, and should be revisited.
+TEST(glTFIOTangentsJobExtended, ColorSeamMorphTargetRemeshesDifferently) {
+    size_t baseVertexCount = 0;
+    size_t morphVertexCount = 0;
+    runColorSeamJobs(MorphMaterial::LIT, &baseVertexCount, &morphVertexCount);
+    EXPECT_EQ(baseVertexCount, 6u);
+    EXPECT_EQ(morphVertexCount, 4u);
+
+    // The unlit path does not remesh, so the counts always match.
+    runColorSeamJobs(MorphMaterial::UNLIT, &baseVertexCount, &morphVertexCount);
+    EXPECT_EQ(baseVertexCount, 6u);
+    EXPECT_EQ(morphVertexCount, 6u);
+}
+
+// A morph target whose remeshed vertex count differs from the base used to be uploaded with the
+// base count, which read past the end of the morph data. It is now neutralized with a warning, and
+// the asset must still load with all of its morph targets.
+TEST_F(glTFIOTest, ExtendedMorphTargetsWithColorSeam) {
+    if (!AssetConfigurationExtended::isSupported()) {
+        GTEST_SKIP() << "The extended asset loader is not supported on this platform.";
+    }
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeColorSeamMorphGlb(MorphMaterial::LIT), 1u);
+    loadExtendedMorphAsset(mEngine, mMaterialProvider, mNameManager,
+            makeColorSeamMorphGlb(MorphMaterial::UNLIT), 1u);
+}
 
 TEST_F(glTFIOTest, RejectsOversizedEightBitIndexAccessor) {
     AssetLoader* loader = AssetLoader::create({ mEngine, mMaterialProvider, mNameManager });
@@ -564,6 +751,83 @@ TEST_F(glTFIOTest, RejectsOversizedEightBitIndexAccessor) {
 
     loader->destroyAsset(asset);
     AssetLoader::destroy(&loader);
+}
+
+// The IndexBuffer is allocated as (count * componentSize), so an accessor whose byte span is
+// computed from a larger stride or a wider type would overrun it. AssetLoader rejects such an
+// accessor before the IndexBuffer exists, which is strictly earlier than the cgltf_validate() call
+// in ResourceLoader, so a null return here proves that gltfio's own check is what fired.
+TEST_F(glTFIOTest, RejectsNonScalarIndexAccessor) {
+    AssetLoader* loader = AssetLoader::create({ mEngine, mMaterialProvider, mNameManager });
+    ASSERT_NE(loader, nullptr);
+
+    // VEC3 of unsigned shorts: capacity would be count * 2, upload would be count * 6.
+    std::vector<uint8_t> glb = makeIndexAccessorGlb("VEC3", 5123, 3u, 0u);
+    EXPECT_EQ(loader->createAsset(glb.data(), uint32_t(glb.size())), nullptr);
+
+    AssetLoader::destroy(&loader);
+}
+
+TEST_F(glTFIOTest, RejectsStridedIndexAccessor) {
+    AssetLoader* loader = AssetLoader::create({ mEngine, mMaterialProvider, mNameManager });
+    ASSERT_NE(loader, nullptr);
+
+    // A byteStride of 8 on a scalar ushort accessor: capacity would be count * 2, upload would be
+    // 8 * (count - 1) + 2.
+    std::vector<uint8_t> glb = makeIndexAccessorGlb("SCALAR", 5123, 3u, 8u);
+    EXPECT_EQ(loader->createAsset(glb.data(), uint32_t(glb.size())), nullptr);
+
+    AssetLoader::destroy(&loader);
+}
+
+TEST_F(glTFIOTest, AcceptsConformingIndexAccessor) {
+    AssetLoader* loader = AssetLoader::create({ mEngine, mMaterialProvider, mNameManager });
+    ASSERT_NE(loader, nullptr);
+
+    std::vector<uint8_t> glb = makeIndexAccessorGlb("SCALAR", 5123, 3u, 0u);
+    FilamentAsset* asset = loader->createAsset(glb.data(), uint32_t(glb.size()));
+    ASSERT_NE(asset, nullptr);
+
+    ResourceLoader resourceLoader({ mEngine, ".", false });
+    EXPECT_TRUE(resourceLoader.loadResources(asset));
+
+    loader->destroyAsset(asset);
+    AssetLoader::destroy(&loader);
+}
+
+TEST_F(glTFIOTest, UploadableIndexAccessorContract) {
+    cgltf_accessor accessor{};
+    accessor.type = cgltf_type_scalar;
+    accessor.component_type = cgltf_component_type_r_16u;
+    accessor.stride = 2;
+    accessor.count = 3;
+    EXPECT_TRUE(gltfio::utility::isUploadableIndexAccessor(&accessor));
+
+    // A wider type inflates cgltf_calc_size() without changing the allocated capacity.
+    accessor.type = cgltf_type_vec3;
+    EXPECT_FALSE(gltfio::utility::isUploadableIndexAccessor(&accessor));
+    accessor.type = cgltf_type_scalar;
+
+    // A stride larger than the component size spreads the source over more bytes than the
+    // destination holds.
+    accessor.stride = 8;
+    EXPECT_FALSE(gltfio::utility::isUploadableIndexAccessor(&accessor));
+    accessor.stride = 2;
+
+    // Sparse contents are not the raw bytes of the bufferView, so a straight copy is wrong.
+    accessor.is_sparse = 1;
+    EXPECT_FALSE(gltfio::utility::isUploadableIndexAccessor(&accessor));
+    accessor.is_sparse = 0;
+
+    // A count beyond uint32 is only representable where cgltf_size is wider than uint32_t.
+    if constexpr (sizeof(cgltf_size) > sizeof(uint32_t)) {
+        accessor.count = cgltf_size(std::numeric_limits<uint32_t>::max()) + 1;
+        EXPECT_FALSE(gltfio::utility::isUploadableIndexAccessor(&accessor));
+    }
+
+    // A count whose byte product wraps size_t is rejected on every target.
+    accessor.count = std::numeric_limits<cgltf_size>::max();
+    EXPECT_FALSE(gltfio::utility::isUploadableIndexAccessor(&accessor));
 }
 
 TEST_F(glTFIOTest, SkipsInverseBindMatricesOutsideBufferView) {

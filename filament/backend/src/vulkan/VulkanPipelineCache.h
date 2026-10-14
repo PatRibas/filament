@@ -135,6 +135,10 @@ public:
     void bindVertexArray(VkVertexInputAttributeDescription const* attribDesc,
             VkVertexInputBindingDescription const* bufferDesc, uint8_t count);
 
+    // Force recording all the dynamic state on the next bindPipeline call by setting
+    // all the dynamic states as dirty.
+    void resetBoundDynamicState() noexcept;
+
     // Set the current bindings for the pipeline and descriptor sets back to empty.
     void resetBoundPipeline();
 
@@ -272,6 +276,10 @@ private:
     VkPipeline createPipeline(const PipelineKey& key, const PipelineDynamicOptions& dynamicOptions) noexcept;
     VkPipeline createComputePipeline(ComputePipelineKey const& key) noexcept;
 
+    uint16_t computeDirtyDynamicState() noexcept;
+
+    void bindDynamicState(VkCommandBuffer cmdbuffer, uint16_t dirtyMask);
+
     // Immutable state.
     VkDevice mDevice = VK_NULL_HANDLE;
 
@@ -279,12 +287,26 @@ private:
     // recreating the same pipeline is cheaper, helping with frame stalling.
     VkPipelineCache mPipelineCache = VK_NULL_HANDLE;
 
-    // Current requirements for the pipeline layout, pipeline, and descriptor sets.
-    PipelineKey mPipelineRequirements = {};
+    // Static state used for VkPipeline creation and cache lookup.
+    // Dynamically handled fields are set to 0 during binding.
+    PipelineKey mStaticPipelineKey = {};
 
-    // Current bindings for the pipeline and descriptor sets.
+    // Dynamic state populated by bind* methods.
+    PipelineKey mDynamicPipelineKey = {};
+
+    // Current bindings for the pipeline.
     PipelineKey mBoundPipeline = {};
     VkPipeline mBoundComputePipeline = VK_NULL_HANDLE;
+
+    // Dynamic state currently recorded in the active command buffer.
+    PipelineKey mBoundDynamicState = {};
+
+    // Dynamic vertex input hash computed in bindVertexArray.
+    uint32_t mDynamicVertexHash = 0;
+    uint32_t mBoundVertexHash = 0;
+
+    // Set to true on command buffer resets to force all dynamic states to emit on the first draw.
+    bool mForceDirtyDynamicState = true;
 
     // Thread pool that allows us to "prewarm" the pipeline cache, reducing draw-time
     // pipeline compilation time.
@@ -293,6 +315,12 @@ private:
     // Callback manager that allows us to notify the frontend when a set of pipelines have
     // been prewarmed, signifying that it is safe to compile pipelines at draw time.
     CallbackManager mCallbackManager;
+
+    // Cached context capabilities for dynamic state extensions
+    bool const mHasVertexInputDynamicState;
+    bool const mHasDynamicState;
+    bool const mHasDynamicState2;
+    bool const mHasColorWriteEnable;
 
     [[maybe_unused]] VulkanContext const& mContext;
 

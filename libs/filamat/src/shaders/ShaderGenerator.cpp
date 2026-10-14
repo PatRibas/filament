@@ -49,15 +49,18 @@ void ShaderGenerator::generateSurfaceMaterialVariantDefines(io::sstream& out,
 
     bool const litVariants = material.isLit || material.hasShadowMultiplier;
 
-    if (litVariants && variant.hasDirectionalLighting()) {
-        CodeGenerator::generateDefine(out, "VARIANT_HAS_DIRECTIONAL_LIGHTING");
-    }
+    assert_invariant(filament::Variant::isValidDepthVariant(variant) ?
+        !filament::Variant::isShadowSampler2DVariant(variant) :
+        !filament::Variant::isDepthMomentsVariant(variant));
+
     if (litVariants && filament::Variant::isShadowReceiverVariant(variant)) {
         CodeGenerator::generateDefine(out, "VARIANT_HAS_SHADOWING");
     }
-    if (filament::Variant::isShadowSampler2DVariant(variant) ||
-            filament::Variant::isDepthMomentsVariant(variant)) {
-        CodeGenerator::generateDefine(out, "VARIANT_HAS_VSM");
+    if (filament::Variant::isDepthMomentsVariant(variant)) {
+        CodeGenerator::generateDefine(out, "VARIANT_HAS_MNT");
+    }
+    if (filament::Variant::isShadowSampler2DVariant(variant)) {
+        CodeGenerator::generateDefine(out, "VARIANT_HAS_S2D");
     }
     if (hasStereo(variant, featureLevel)) {
         CodeGenerator::generateDefine(out, "VARIANT_HAS_STEREO");

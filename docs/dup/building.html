@@ -170,10 +170,10 @@
 section below.</p>
 <p>To build Filament for Android you must also install the following:</p>
 <ul>
-<li>Android Studio Flamingo or more recent</li>
+<li>Android Studio Quail or more recent</li>
 <li>Android SDK</li>
-<li>Android NDK 25.1 or higher</li>
-<li>Java 17</li>
+<li>Android NDK 29 or higher</li>
+<li>Java 21</li>
 </ul>
 <h2 id="environment-variables"><a class="header" href="#environment-variables">Environment variables</a></h2>
 <p>To build Filament for Android, make sure the environment variable <code>ANDROID_HOME</code> points to the
@@ -221,6 +221,7 @@ The script offers more features described by executing <code>build.sh -h</code>.
 <li><code>FILAMENT_ENABLE_RTTI</code>:          Enable C++ RTTI (default: OFF).</li>
 </ul>
 <p>Note: If you intend to use the JNI library (Android/Java build), you need to have <code>FILAMENT_ENABLE_EXCEPTIONS</code> enabled. If you are using Filament on Android as a pure native library and want to save space, you can disable it (e.g., using <code>./build.sh -E</code>).</p>
+<p><code>build.sh -E</code> will disable exceptions when building the target libraries, but host tools will still be built with exceptions unless <code>-y none</code> is also specified. This is because tools such as <code>cmgen</code> and their <code>imageio</code> dependency still require exceptions. If both <code>-E</code> and <code>-y none</code> are specified, builds that include <code>cmgen</code>, <code>imageio</code>, or other exception-dependent tools will fail to compile.</p>
 <p>To turn an option on or off:</p>
 <pre><code class="language-shell">cd &lt;cmake-build-directory&gt;
 cmake . -DOPTION=ON       # Replace OPTION with the option name, set to ON / OFF
@@ -287,6 +288,20 @@ ninja
 <pre><code class="language-shell">./build.sh -p ios debug
 </code></pre>
 <p>See <a href="./ios/samples/README.html">ios/samples/README.md</a> for more information.</p>
+<h2 id="tvos"><a class="header" href="#tvos">tvOS</a></h2>
+<p>tvOS builds use the same toolchain path as iOS and are Metal-only (the OpenGL
+backend is automatically disabled). To build for Apple TV devices and the
+tvOS simulator, and bundle the results as XCFrameworks:</p>
+<pre><code class="language-shell">./build.sh -i -s -p tvos release
+</code></pre>
+<p>Omit <code>-s</code> to skip the simulator slice. Add <code>-a</code> to generate a
+<code>filament-&lt;type&gt;-tvos.tgz</code> archive. Output is installed under
+<code>out/tvos-&lt;type&gt;/filament</code> with one XCFramework per library
+(<code>tvos-arm64</code> and <code>tvos-arm64-simulator</code> slices).</p>
+<p>The deployment floor is tvOS 17.0. Note that the tvOS simulator advertises
+<code>MTLGPUFamilyApple2</code> (the Apple TV HD GPU), so features requiring comparison
+samplers (e.g. PCF shadows) are unavailable in the simulator while remaining
+available on all Apple TV 4K devices (<code>MTLGPUFamilyApple3</code>+).</p>
 <h2 id="windows"><a class="header" href="#windows">Windows</a></h2>
 <h3 id="building-on-windows-with-visual-studio-2019-or-later"><a class="header" href="#building-on-windows-with-visual-studio-2019-or-later">Building on Windows with Visual Studio 2019 or later</a></h3>
 <blockquote>

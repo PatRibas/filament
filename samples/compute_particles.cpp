@@ -18,8 +18,8 @@
 
 #include "generated/resources/resources.h"
 
-#include <filamentapp/Config.h>
-#include <filamentapp/FilamentApp.h>
+#include <filamentapp/AssetLoader.h>
+#include <filamentapp/FilamentApp2.h>
 
 #include <filament/BufferObject.h>
 #include <filament/Engine.h>
@@ -34,8 +34,6 @@
 #include <filament/View.h>
 
 #include <utils/EntityManager.h>
-#include <utils/getopt.h>
-#include <utils/Path.h>
 
 #include <math/mat3.h>
 #include <math/mat4.h>
@@ -44,12 +42,11 @@
 #include <math/vec3.h>
 #include <math/vec4.h>
 
+#include <samples/SampleConfig.h>
+
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
-#include <iostream>
 #include <memory>
-#include <string>
 #include <vector>
 
 using namespace filament;
@@ -59,8 +56,8 @@ using utils::EntityManager;
 
 namespace {
 
-constexpr uint32_t DEFAULT_PARTICLE_COUNT = 10485760;
-constexpr uint32_t DEFAULT_GROUP_SIZE = 64;
+constexpr int DEFAULT_PARTICLE_COUNT = 10485760;
+constexpr int DEFAULT_GROUP_SIZE = 64;
 
 static const short4 QUAD_TBN = packSnorm16(
         mat3f::packTangentFrame(
@@ -95,6 +92,8 @@ struct ParticleInitialData {
 };
 
 struct App {
+    FilamentApp2* filamentApp = nullptr;
+    SampleConfig config;
     Entity renderable;
     Entity light;
     Material* computeMaterial = nullptr;
@@ -108,6 +107,7 @@ struct App {
     IndexBuffer* indexBuffer = nullptr;
     std::unique_ptr<ParticleInitialData> initialData;
     uint32_t groupCount = 0;
+    double lastTime = 0.016;
 };
 
 std::unique_ptr<ParticleInitialData> createInitialParticles(uint32_t count) {
@@ -148,206 +148,166 @@ std::unique_ptr<ParticleInitialData> createInitialParticles(uint32_t count) {
     return data;
 }
 
-static void printUsage(char* name) {
-    std::string execName(utils::Path(name).getName());
-    std::string usage("EXEC_NAME\n"
-                      "Usage:\n"
-                      "    EXEC_NAME [options]\n"
-                      "Options:\n"
-                      "   --help, -h\n"
-                      "       Prints this message\n\n"
-                      "   --count, -c\n"
-                      "       Number of particles to render (default: 10485760)\n\n"
-                      "   --group-size, -g\n"
-                      "       Compute workgroup size X (default: 64)\n\n"
-                      "API_USAGE");
-    const std::string from("EXEC_NAME");
-    for (size_t pos = usage.find(from); pos != std::string::npos;
-            pos = usage.find(from, pos)) {
-        usage.replace(pos, from.length(), execName);
-    }
-    const std::string apiUsage("API_USAGE");
-    for (size_t pos = usage.find(apiUsage); pos != std::string::npos;
-            pos = usage.find(apiUsage, pos)) {
-        usage.replace(pos, apiUsage.length(), samples::getBackendAPIArgumentsUsage());
-    }
-    std::cout << usage;
-}
-
 } // namespace
 
-int main(int argc, char** argv) {
-    Config config;
-    config.title = "compute_particles";
-    config.backend = Engine::Backend::DEFAULT;
-    config.iblDirectory = FilamentApp::getRootAssetsPath() + "assets/ibl/lightroom_14b";
-
-    uint32_t particleCount = DEFAULT_PARTICLE_COUNT;
-    uint32_t groupSizeX = DEFAULT_GROUP_SIZE;
-
-    static constexpr const char* OPTSTR = "ha:c:g:";
-    static const utils::getopt::option OPTIONS[] = {
-        { "help", utils::getopt::no_argument, nullptr, 'h' },
-        { "api", utils::getopt::required_argument, nullptr, 'a' },
-        { "count", utils::getopt::required_argument, nullptr, 'c' },
-        { "group-size", utils::getopt::required_argument, nullptr, 'g' },
-        { nullptr, 0, nullptr, 0 }
-    };
-
-    int opt;
-    int optionIndex = 0;
-    while ((opt = utils::getopt::getopt_long(argc, argv, OPTSTR, OPTIONS, &optionIndex)) >= 0) {
-        std::string const arg(utils::getopt::optarg ? utils::getopt::optarg : "");
-        switch (opt) {
-            default:
-            case 'h':
-                printUsage(argv[0]);
-                exit(0);
-            case 'a':
-                config.backend = samples::parseArgumentsForBackend(arg);
-                break;
-            case 'c': {
-                long long const val = std::atoll(arg.c_str());
-                if (val <= 0) {
-                    std::cerr << "Invalid particle count: " << arg << std::endl;
-                    exit(1);
-                }
-                particleCount = static_cast<uint32_t>(val);
-                break;
-            }
-            case 'g': {
-                long long const val = std::atoll(arg.c_str());
-                if (val <= 0) {
-                    std::cerr << "Invalid group size: " << arg << std::endl;
-                    exit(1);
-                }
-                groupSizeX = static_cast<uint32_t>(val);
-                break;
-            }
-        }
+std::unique_ptr<FilamentApp2> createSampleApp(SampleConfig config,
+        filament::app::DisplayManager* dm, filament::app::AssetLoader* loader) {
+    if (config.iblDirectory.empty()) {
+        config.iblDirectory = "assets/ibl/lightroom_14b";
     }
+    auto app = std::make_shared<App>();
+    app->config = config;
 
-    App app;
-    auto setup = [&app, particleCount, groupSizeX](Engine* engine, View* view, Scene* scene) {
-        app.initialData = createInitialParticles(particleCount);
+    uint32_t const particleCount =
+            static_cast<uint32_t>(config.getInt("count", DEFAULT_PARTICLE_COUNT));
+    uint32_t const groupSizeX =
+            static_cast<uint32_t>(config.getInt("group-size", DEFAULT_GROUP_SIZE));
+
+    auto setup = [app, particleCount, groupSizeX](Engine* engine, View*, Scene* scene) {
+        app->initialData = createInitialParticles(particleCount);
         size_t const bufferSize = particleCount * sizeof(float4);
 
-        app.positionsBuffer = BufferObject::Builder()
+        app->positionsBuffer = BufferObject::Builder()
                 .size(bufferSize)
                 .bindingType(BufferObject::BindingType::SHADER_STORAGE)
                 .name("Positions")
                 .build(*engine);
-        app.positionsBuffer->setBuffer(*engine,
-                BufferObject::BufferDescriptor(app.initialData->positions.data(), bufferSize, nullptr));
+        app->positionsBuffer->setBuffer(*engine,
+                BufferObject::BufferDescriptor(app->initialData->positions.data(), bufferSize, nullptr));
 
-        app.velocitiesBuffer = BufferObject::Builder()
+        app->velocitiesBuffer = BufferObject::Builder()
                 .size(bufferSize)
                 .bindingType(BufferObject::BindingType::SHADER_STORAGE)
                 .name("Velocities")
                 .build(*engine);
-        app.velocitiesBuffer->setBuffer(*engine,
-                BufferObject::BufferDescriptor(app.initialData->velocities.data(), bufferSize, nullptr));
+        app->velocitiesBuffer->setBuffer(*engine,
+                BufferObject::BufferDescriptor(app->initialData->velocities.data(), bufferSize, nullptr));
 
-        app.colorsBuffer = BufferObject::Builder()
+        app->colorsBuffer = BufferObject::Builder()
                 .size(bufferSize)
                 .bindingType(BufferObject::BindingType::SHADER_STORAGE)
                 .name("Colors")
                 .build(*engine);
-        app.colorsBuffer->setBuffer(*engine,
-                BufferObject::BufferDescriptor(app.initialData->colors.data(), bufferSize, nullptr));
+        app->colorsBuffer->setBuffer(*engine,
+                BufferObject::BufferDescriptor(app->initialData->colors.data(), bufferSize, nullptr));
 
-        app.computeMaterial = Material::Builder()
+        app->computeMaterial = Material::Builder()
                 .package(RESOURCES_COMPUTEPARTICLES_DATA, RESOURCES_COMPUTEPARTICLES_SIZE)
                 .groupSize({ groupSizeX, 1, 1 })
                 .build(*engine);
 
-        math::uint3 const groupSize = app.computeMaterial->getGroupSize();
-        app.groupCount = (particleCount + groupSize.x - 1) / groupSize.x;
+        math::uint3 const groupSize = app->computeMaterial->getGroupSize();
+        app->groupCount = (particleCount + groupSize.x - 1) / groupSize.x;
 
-        app.computeInstance = app.computeMaterial->createInstance();
-        app.computeInstance->setParameter("Positions", app.positionsBuffer);
-        app.computeInstance->setParameter("Velocities", app.velocitiesBuffer);
-        app.computeInstance->setParameter("Colors", app.colorsBuffer);
-        app.computeInstance->setParameter("count", particleCount);
+        app->computeInstance = app->computeMaterial->createInstance();
+        app->computeInstance->setParameter("Positions", app->positionsBuffer);
+        app->computeInstance->setParameter("Velocities", app->velocitiesBuffer);
+        app->computeInstance->setParameter("Colors", app->colorsBuffer);
+        app->computeInstance->setParameter("count", particleCount);
 
-        app.renderMaterial = Material::Builder()
+        app->renderMaterial = Material::Builder()
                 .package(RESOURCES_PARTICLERENDER_DATA, RESOURCES_PARTICLERENDER_SIZE)
                 .build(*engine);
-        app.renderInstance = app.renderMaterial->createInstance();
-        app.renderInstance->setParameter("Positions", app.positionsBuffer);
-        app.renderInstance->setParameter("Colors", app.colorsBuffer);
+        app->renderInstance = app->renderMaterial->createInstance();
+        app->renderInstance->setParameter("Positions", app->positionsBuffer);
+        app->renderInstance->setParameter("Colors", app->colorsBuffer);
 
-        app.vertexBuffer = VertexBuffer::Builder()
+        app->vertexBuffer = VertexBuffer::Builder()
                 .vertexCount(4)
                 .bufferCount(1)
                 .attribute(VertexAttribute::POSITION, 0, VertexBuffer::AttributeType::FLOAT3, 0, sizeof(QuadVertex))
                 .attribute(VertexAttribute::TANGENTS, 0, VertexBuffer::AttributeType::SHORT4, offsetof(QuadVertex, tangents), sizeof(QuadVertex))
                 .normalized(VertexAttribute::TANGENTS)
                 .build(*engine);
-        app.vertexBuffer->setBufferAt(*engine, 0,
+        app->vertexBuffer->setBufferAt(*engine, 0,
                 VertexBuffer::BufferDescriptor(QUAD_VERTICES, sizeof(QUAD_VERTICES), nullptr));
 
-        app.indexBuffer = IndexBuffer::Builder()
+        app->indexBuffer = IndexBuffer::Builder()
                 .indexCount(6)
                 .bufferType(IndexBuffer::IndexType::USHORT)
                 .build(*engine);
-        app.indexBuffer->setBuffer(*engine,
+        app->indexBuffer->setBuffer(*engine,
                 IndexBuffer::BufferDescriptor(QUAD_INDICES, sizeof(QUAD_INDICES), nullptr));
 
-        app.renderable = EntityManager::get().create();
+        app->renderable = EntityManager::get().create();
         RenderableManager::Builder(1)
                 .boundingBox({{ -1.6f, -1.6f, -1.6f }, { 1.6f, 1.6f, 1.6f }})
-                .geometry(0, RenderableManager::PrimitiveType::TRIANGLES, app.vertexBuffer, app.indexBuffer)
-                .material(0, app.renderInstance)
+                .geometry(0, RenderableManager::PrimitiveType::TRIANGLES, app->vertexBuffer, app->indexBuffer)
+                .material(0, app->renderInstance)
                 .instances(particleCount)
                 .culling(false)
                 .receiveShadows(false)
                 .castShadows(false)
-                .build(*engine, app.renderable);
+                .build(*engine, app->renderable);
 
         auto& tcm = engine->getTransformManager();
-        auto ti = tcm.getInstance(app.renderable);
+        auto ti = tcm.getInstance(app->renderable);
         tcm.setTransform(ti, mat4f::translation(float3{ 0.0f, 0.0f, -4.0f }));
-        scene->addEntity(app.renderable);
+        scene->addEntity(app->renderable);
 
-        app.light = EntityManager::get().create();
+        app->light = EntityManager::get().create();
         LightManager::Builder(LightManager::Type::SUN)
                 .color(Color::toLinear<ACCURATE>(sRGBColor(0.98f, 0.92f, 0.89f)))
                 .intensity(110000)
                 .direction({ 0.7f, -1.0f, -0.8f })
                 .sunAngularRadius(1.9f)
                 .castShadows(false)
-                .build(*engine, app.light);
-        scene->addEntity(app.light);
+                .build(*engine, app->light);
+        scene->addEntity(app->light);
     };
 
-    auto cleanup = [&app](Engine* engine, View*, Scene*) {
-        engine->destroy(app.renderable);
-        engine->destroy(app.light);
+    auto cleanup = [app](Engine* engine, View*, Scene*) {
+        engine->destroy(app->renderable);
+        engine->destroy(app->light);
 
-        engine->destroy(app.renderInstance);
-        engine->destroy(app.renderMaterial);
+        engine->destroy(app->renderInstance);
+        engine->destroy(app->renderMaterial);
 
-        engine->destroy(app.computeInstance);
-        engine->destroy(app.computeMaterial);
+        engine->destroy(app->computeInstance);
+        engine->destroy(app->computeMaterial);
 
-        engine->destroy(app.positionsBuffer);
-        engine->destroy(app.velocitiesBuffer);
-        engine->destroy(app.colorsBuffer);
-        engine->destroy(app.vertexBuffer);
-        engine->destroy(app.indexBuffer);
+        engine->destroy(app->positionsBuffer);
+        engine->destroy(app->velocitiesBuffer);
+        engine->destroy(app->colorsBuffer);
+        engine->destroy(app->vertexBuffer);
+        engine->destroy(app->indexBuffer);
     };
 
-    static double lastTime = 0.016f;
-    FilamentApp::get().animate([&app](Engine* engine, View*, double time) {
-        float dt = float(time - lastTime);
-        lastTime = time;
-        dt = std::clamp(dt, 0.001f, 0.05f);
+    auto fApp = samples::getBuilder(config, dm, loader)
+                        .setup(setup)
+                        .cleanup(cleanup)
+                        .animation([app](Engine* engine, View*, double time) {
+                            float dt = float(time - app->lastTime);
+                            app->lastTime = time;
+                            dt = std::clamp(dt, 0.001f, 0.05f);
 
-        app.computeInstance->setParameter("deltaTime", dt);
-        engine->dispatch(app.computeInstance, { app.groupCount, 1, 1 });
-    });
-
-    FilamentApp::get().run(config, setup, cleanup);
-    return 0;
+                            app->computeInstance->setParameter("deltaTime", dt);
+                            engine->dispatch(app->computeInstance, { app->groupCount, 1, 1 });
+                        })
+                        .build();
+    app->filamentApp = fApp.get();
+    return fApp;
 }
+
+samples::SampleParameters createAppParameters() {
+    return {
+        samples::Parameter::makeInt("count", 'C', "Number of particles to render",
+                DEFAULT_PARTICLE_COUNT, 1),
+        samples::Parameter::makeInt("group-size", 'G', "Compute workgroup size X",
+                DEFAULT_GROUP_SIZE, 1),
+    };
+}
+
+#ifndef __ANDROID__
+int main(int argc, char** argv) {
+    SampleConfig config;
+    config.title = "compute_particles";
+    config.iblDirectory = "assets/ibl/lightroom_14b";
+    samples::handleCommandLineArguments(argc, argv, &config,
+            { .parameters = createAppParameters() });
+    auto dm = samples::getDisplayManager(config);
+    auto loader = samples::getAssetLoader(config);
+    auto app = createSampleApp(config, dm.get(), loader.get());
+    return samples::runApp(std::move(app), std::move(dm), std::move(loader));
+}
+#endif

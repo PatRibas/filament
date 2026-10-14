@@ -119,7 +119,7 @@ MetalSwapChain::MetalSwapChain(
       platform(platform),
       depthStencilFormat(decideDepthStencilFormat(flags)),
       layer(nativeWindow),
-      layerDrawableMutex(std::make_shared<std::mutex>()),
+      layerDrawableMutex(std::make_shared<utils::Mutex>()),
       type(SwapChainType::CAMETALLAYER),
       flags(flags) {
 
@@ -230,7 +230,7 @@ bool MetalSwapChain::isAbandoned() const {
 
 void MetalSwapChain::releaseDrawable() {
     if (drawable) {
-        std::lock_guard<std::mutex> lock(*layerDrawableMutex);
+        utils::LockGuard const lock(*layerDrawableMutex);
         drawable = nil;
     }
 }
@@ -337,9 +337,8 @@ void MetalSwapChain::present() {
         if (frameScheduled.callback) {
             scheduleFrameScheduledCallback(timeNs);
         } else  {
-            if (presentationTimeNs) {
-                const CFTimeInterval timeSeconds =
-                        (CFTimeInterval) presentationTimeNs / 1000000000.0;
+            if (timeNs) {
+                const CFTimeInterval timeSeconds = (CFTimeInterval) timeNs / 1000000000.0;
                 [getPendingCommandBuffer(&context) presentDrawable:drawable atTime:timeSeconds];
             } else {
                 [getPendingCommandBuffer(&context) presentDrawable:drawable];
@@ -355,7 +354,7 @@ public:
     PresentDrawableData& operator=(const PresentDrawableData&) = delete;
 
     static PresentDrawableData* create(id<CAMetalDrawable> drawable,
-            std::shared_ptr<std::mutex> drawableMutex, MetalDriver* driver, uint64_t flags,
+            std::shared_ptr<utils::Mutex> drawableMutex, MetalDriver* driver, uint64_t flags,
             int64_t presentationTimeNs) {
         assert_invariant(drawableMutex);
         assert_invariant(driver);
@@ -387,7 +386,7 @@ public:
     }
 
 private:
-    PresentDrawableData(id<CAMetalDrawable> drawable, std::shared_ptr<std::mutex> drawableMutex,
+    PresentDrawableData(id<CAMetalDrawable> drawable, std::shared_ptr<utils::Mutex> drawableMutex,
             MetalDriver* driver, uint64_t flags, int64_t presentationTimeNs)
             : mDrawable(drawable),
               mDrawableMutex(drawableMutex),
@@ -397,7 +396,7 @@ private:
 
     static void cleanupAndDestroy(PresentDrawableData *that) {
         if (that->mDrawable) {
-            std::lock_guard<std::mutex> lock(*(that->mDrawableMutex));
+            utils::LockGuard const lock(*(that->mDrawableMutex));
             that->mDrawable = nil;
         }
         that->mDrawableMutex.reset();
@@ -406,7 +405,7 @@ private:
     }
 
     id<CAMetalDrawable> mDrawable;
-    std::shared_ptr<std::mutex> mDrawableMutex;
+    std::shared_ptr<utils::Mutex> mDrawableMutex;
     MetalDriver* mDriver = nullptr;
     uint64_t mFlags = 0;
     int64_t mPresentationTimeNs = 0;
@@ -426,7 +425,7 @@ void MetalSwapChain::scheduleFrameScheduledCallback(int64_t presentationTimeNs) 
 
     struct Callback {
         Callback(std::shared_ptr<FrameScheduledCallback> callback, id<CAMetalDrawable> drawable,
-                std::shared_ptr<std::mutex> drawableMutex, MetalDriver* driver, uint64_t flags,
+                std::shared_ptr<utils::Mutex> drawableMutex, MetalDriver* driver, uint64_t flags,
                 int64_t presentationTimeNs)
                 : f(callback),
                   data(PresentDrawableData::create(drawable, drawableMutex, driver, flags,
@@ -528,7 +527,7 @@ MetalAttachment MetalSwapChain::acquireBaseDrawable() {
     // calling -nextDrawable, or when releasing the last known reference
     // to any CAMetalDrawable returned from a previous -nextDrawable.
     {
-        std::lock_guard<std::mutex> lock(*layerDrawableMutex);
+        utils::LockGuard const lock(*layerDrawableMutex);
         drawable = [layer nextDrawable];
     }
 
@@ -1447,7 +1446,7 @@ void MetalFence::encode() {
                           // accessing it.
                           auto lifetime = weakDriverLifetime.lock();
                           if (s && lifetime) {
-                              std::lock_guard<std::mutex> lock(lifetime->mutex);
+                              utils::LockGuard const lock(lifetime->mutex);
                               if (lifetime->driver) {
                                   lifetime->driver->signalFence(
                                           [&] { s->status = FenceStatus::CONDITION_SATISFIED; });
@@ -1545,8 +1544,8 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                 bufferArgument.dataType = MTLDataTypePointer;
                 bufferArgument.access = (binding.type == DescriptorType::SHADER_STORAGE_BUFFER &&
                                                 stage == ShaderStage::COMPUTE)
-                        ? MTLArgumentAccessReadWrite
-                        : MTLArgumentAccessReadOnly;
+                        ? MTLBindingAccessReadWrite
+                        : MTLBindingAccessReadOnly;
                 [arguments addObject:bufferArgument];
                 break;
             }
@@ -1584,13 +1583,13 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                     textureType = textureTypes[textureIndex++];
                 }
                 textureArgument.textureType = textureType;
-                textureArgument.access = MTLArgumentAccessReadOnly;
+                textureArgument.access = MTLBindingAccessReadOnly;
                 [arguments addObject:textureArgument];
 
                 MTLArgumentDescriptor* samplerArgument = [MTLArgumentDescriptor argumentDescriptor];
                 samplerArgument.index = binding.binding * 2 + 1;
                 samplerArgument.dataType = MTLDataTypeSampler;
-                samplerArgument.access = MTLArgumentAccessReadOnly;
+                samplerArgument.access = MTLBindingAccessReadOnly;
                 [arguments addObject:samplerArgument];
                 break;
             }
@@ -1627,7 +1626,7 @@ id<MTLArgumentEncoder> MetalDescriptorSetLayout::getArgumentEncoderSlow(id<MTLDe
                 } else if (is3dTypeDescriptor(binding.type)) {
                     textureArgument.textureType = MTLTextureType3D;
                 }
-                textureArgument.access = MTLArgumentAccessWriteOnly;
+                textureArgument.access = MTLBindingAccessWriteOnly;
                 [arguments addObject:textureArgument];
                 break;
             }
@@ -1643,6 +1642,25 @@ MetalDescriptorSet::MetalDescriptorSet(MetalDescriptorSetLayout* layout) noexcep
     : layout(layout) {}
 
 void MetalDescriptorSet::finalize(MetalDriver* driver) {
+#if defined(FILAMENT_APPLETV)
+    // The tvOS floor (17.0) predates none of the stages: variants, and the stage-less
+    // useResource(s) variants are deprecated there (-Werror); always use stages:.
+    [driver->mContext->currentRenderPassEncoder useResource:driver->mContext->emptyBuffer
+                                                      usage:MTLResourceUsageRead
+                                                     stages:MTLRenderStageVertex | MTLRenderStageFragment];
+    [driver->mContext->currentRenderPassEncoder
+            useResource:getOrCreateEmptyTexture(driver->mContext)
+                  usage:MTLResourceUsageRead
+                 stages:MTLRenderStageVertex | MTLRenderStageFragment];
+    [driver->mContext->currentRenderPassEncoder useResources:vertexResources.data()
+                                                       count:vertexResources.size()
+                                                       usage:MTLResourceUsageRead
+                                                      stages:MTLRenderStageVertex];
+    [driver->mContext->currentRenderPassEncoder useResources:fragmentResources.data()
+                                                       count:fragmentResources.size()
+                                                       usage:MTLResourceUsageRead
+                                                      stages:MTLRenderStageFragment];
+#else
     [driver->mContext->currentRenderPassEncoder useResource:driver->mContext->emptyBuffer
                                                       usage:MTLResourceUsageRead];
     [driver->mContext->currentRenderPassEncoder
@@ -1666,6 +1684,7 @@ void MetalDescriptorSet::finalize(MetalDriver* driver) {
                                                            count:fragmentResources.size()
                                                            usage:MTLResourceUsageRead];
     }
+#endif
 }
 
 void MetalDescriptorSet::finalizeCompute(
