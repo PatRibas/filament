@@ -157,6 +157,7 @@ export class Texture {
     public getDepth(engine: Engine, level?: number) : number;
     public getLevels(engine: Engine) : number;
     public generateMipmaps(engine: Engine) : void;
+    public static isImageFormatSupported(engine: Engine, format: Texture$InternalFormat): boolean;
     public static isTextureFormatMipmappable(engine: Engine, format: Texture$InternalFormat): boolean;
     public static validatePixelFormatAndType(internalFormat: Texture$InternalFormat,
             format: PixelDataFormat, type: PixelDataType): boolean;

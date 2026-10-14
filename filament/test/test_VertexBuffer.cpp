@@ -51,6 +51,8 @@ public:
                 .WillByDefault(Return(FeatureLevel::FEATURE_LEVEL_1));
         ON_CALL(*this, isTextureFormatSupported(_))
                 .WillByDefault(Return(true));
+        ON_CALL(*this, isImageFormatSupported(_))
+                .WillByDefault(Return(true));
         ON_CALL(*this, isRenderTargetFormatSupported(_))
                 .WillByDefault(Return(true));
         ON_CALL(*this, isTextureFormatMipmappable(_))

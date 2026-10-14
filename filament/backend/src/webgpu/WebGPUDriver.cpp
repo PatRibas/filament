@@ -872,6 +872,26 @@ bool WebGPUDriver::isTextureFormatSupported(const TextureFormat format) {
     return toWGPUTextureFormat(format) != wgpu::TextureFormat::Undefined;
 }
 
+bool WebGPUDriver::isImageFormatSupported(const TextureFormat format) {
+    switch (format) {
+        case TextureFormat::RGB8:
+        case TextureFormat::RGB8_SNORM:
+        case TextureFormat::RGB8UI:
+        case TextureFormat::RGB8I:
+        case TextureFormat::RGB16F:
+        case TextureFormat::RGB16UI:
+        case TextureFormat::RGB16I:
+        case TextureFormat::RGB32F:
+        case TextureFormat::RGB32UI:
+        case TextureFormat::RGB32I:
+            // Three-component formats are emulated with four-component formats in WebGPU,
+            // which is not compatible with storage image load/store.
+            return false;
+        default:
+            return isFormatStorageCompatible(toWGPUTextureFormat(format));
+    }
+}
+
 bool WebGPUDriver::isTextureSwizzleSupported() {
 #if defined(__EMSCRIPTEN__)
     return false;

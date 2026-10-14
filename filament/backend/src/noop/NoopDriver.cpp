@@ -191,6 +191,10 @@ bool NoopDriver::isTextureFormatSupported(TextureFormat format) {
     return true;
 }
 
+bool NoopDriver::isImageFormatSupported(TextureFormat format) {
+    return true;
+}
+
 bool NoopDriver::isTextureSwizzleSupported() {
     return true;
 }

@@ -664,6 +664,19 @@ public class Texture {
     }
 
     /**
+     * Checks whether a given format is supported for image load/store in this {@link Engine}.
+     * This depends on the selected backend.
+     *
+     * @param engine {@link Engine} to test the {@link InternalFormat InternalFormat} against
+     * @param format format to check
+     * @return <code>true</code> if this format is supported for image load/store.
+     */
+    public static boolean isImageFormatSupported(@NonNull Engine engine,
+            @NonNull InternalFormat format) {
+        return nIsImageFormatSupported(engine.getNativeObject(), format.ordinal());
+    }
+
+    /**
      * Checks whether a given texture format is supported for mipmapping in this {@link Engine}.
      * This depends on the selected backend.
      *
@@ -1315,6 +1328,7 @@ public class Texture {
     }
 
     private static native boolean nIsTextureFormatSupported(long nativeEngine, int internalFormat);
+    private static native boolean nIsImageFormatSupported(long nativeEngine, int internalFormat);
     private static native boolean nIsTextureFormatMipmappable(long nativeEngine, int internalFormat);
     private static native boolean nIsTextureSwizzleSupported(long nativeEngine);
     private static native int nGetMaxTextureSize(long nativeObject, int ordinal);

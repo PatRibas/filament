@@ -94,6 +94,9 @@ public:
     /** @return Whether a backend supports a particular format. */
     static bool isTextureFormatSupported(Engine& engine, InternalFormat format) noexcept;
 
+    /** @return Whether a backend supports image load/store of a particular format. */
+    static bool isImageFormatSupported(Engine& engine, InternalFormat format) noexcept;
+
     /** @return Whether a backend supports mipmapping of a particular format. */
     static bool isTextureFormatMipmappable(Engine& engine, InternalFormat format) noexcept;
 

@@ -91,6 +91,9 @@ public:
     // Synchronous call to the backend. Returns whether a backend supports a particular format.
     static bool isTextureFormatSupported(FEngine& engine, InternalFormat format) noexcept;
 
+    // Synchronous call to the backend. Returns whether a backend supports image load/store of a particular format.
+    static bool isImageFormatSupported(FEngine& engine, InternalFormat format) noexcept;
+
     // Synchronous call to the backend. Returns whether a backend supports mipmapping of a particular format.
     static bool isTextureFormatMipmappable(FEngine& engine, InternalFormat format) noexcept;
 

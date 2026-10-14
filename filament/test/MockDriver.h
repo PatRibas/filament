@@ -67,6 +67,7 @@ public:
                     backend::Platform::SyncCallback cb, void* userData),
             (override));
     MOCK_METHOD(bool, isTextureFormatSupported, (backend::TextureFormat format), (override));
+    MOCK_METHOD(bool, isImageFormatSupported, (backend::TextureFormat format), (override));
     MOCK_METHOD(bool, isTextureSwizzleSupported, (), (override));
     MOCK_METHOD(bool, isTextureFormatMipmappable, (backend::TextureFormat format), (override));
     MOCK_METHOD(bool, isTextureFormatFilterable, (backend::TextureFormat format), (override));

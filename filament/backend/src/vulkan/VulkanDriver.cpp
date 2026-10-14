@@ -1834,6 +1834,16 @@ bool VulkanDriver::isTextureFormatSupported(TextureFormat format) {
     return info.optimalTilingFeatures != 0;
 }
 
+bool VulkanDriver::isImageFormatSupported(TextureFormat format) {
+    VkFormat vkformat = fvkutils::getVkFormat(format);
+    if (vkformat == VK_FORMAT_UNDEFINED) {
+        return false;
+    }
+    VkFormatProperties info;
+    vkGetPhysicalDeviceFormatProperties(mPlatform->getPhysicalDevice(), vkformat, &info);
+    return (info.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
+}
+
 bool VulkanDriver::isTextureSwizzleSupported() {
     return true;
 }

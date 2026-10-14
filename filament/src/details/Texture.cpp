@@ -182,6 +182,13 @@ Texture* Texture::Builder::build(Engine& engine) {
                 << " not supported on this platform, texture name="
                 << getNameOrDefault().c_str_safe();
 
+        if (any(mImpl->mUsage & Texture::Usage::STORAGE)) {
+            FILAMENT_CHECK_PRECONDITION(Texture::isImageFormatSupported(engine, mImpl->mFormat))
+                    << "Image format " << uint16_t(mImpl->mFormat)
+                    << " not supported for STORAGE usage on this platform, texture name="
+                    << getNameOrDefault().c_str_safe();
+        }
+
         FILAMENT_CHECK_PRECONDITION(mImpl->mWidth > 0 && mImpl->mHeight > 0)
                 << "Texture has invalid dimensions: (" << mImpl->mWidth << ", " << mImpl->mHeight
                 << "), texture name=" << getNameOrDefault().c_str_safe();
@@ -796,6 +803,10 @@ void FTexture::updateLodRange(uint8_t const level) noexcept {
 
 bool FTexture::isTextureFormatSupported(FEngine& engine, InternalFormat const format) noexcept {
     return engine.getDriverApi().isTextureFormatSupported(format);
+}
+
+bool FTexture::isImageFormatSupported(FEngine& engine, InternalFormat const format) noexcept {
+    return engine.getDriverApi().isImageFormatSupported(format);
 }
 
 bool FTexture::isTextureFormatMipmappable(FEngine& engine, InternalFormat const format) noexcept {

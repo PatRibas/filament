@@ -232,6 +232,11 @@ TEST_F(ComputeTest, writesStorageImageFromCompute) {
     auto& driver = getDriverApi();
     constexpr uint32_t TEXTURE_SIZE = 8;
 
+    EXPECT_TRUE(driver.isImageFormatSupported(TextureFormat::RGBA8));
+    EXPECT_TRUE(driver.isImageFormatSupported(TextureFormat::RGBA32F));
+    EXPECT_FALSE(driver.isImageFormatSupported(TextureFormat::RGB8));
+    EXPECT_FALSE(driver.isImageFormatSupported(TextureFormat::DEPTH24));
+
     TextureHandle const texture = driver.createTexture(SamplerType::SAMPLER_2D, 1,
             TextureFormat::RGBA8, 1, TEXTURE_SIZE, TEXTURE_SIZE, 1,
             TextureUsage::STORAGE | TextureUsage::SAMPLEABLE | TextureUsage::BLIT_SRC);

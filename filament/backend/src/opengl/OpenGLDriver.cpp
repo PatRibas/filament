@@ -2839,6 +2839,58 @@ bool OpenGLDriver::isTextureFormatSupported(TextureFormat const format) {
     return getInternalFormat(format) != 0;
 }
 
+bool OpenGLDriver::isImageFormatSupported(TextureFormat const format) {
+#if defined(__EMSCRIPTEN__)
+    return false;
+#else
+    if (!mContext.isAtLeastGL<4, 2>() && !mContext.isAtLeastGLES<3, 1>()) {
+        return false;
+    }
+    switch (format) {
+        // Formats supported in both OpenGL ES 3.1+ (Table 8.27) and OpenGL 4.2+ (Table 8.26).
+        case TextureFormat::RGBA32F:
+        case TextureFormat::RGBA16F:
+        case TextureFormat::R32F:
+        case TextureFormat::RGBA32UI:
+        case TextureFormat::RGBA16UI:
+        case TextureFormat::RGBA8UI:
+        case TextureFormat::R32UI:
+        case TextureFormat::RGBA32I:
+        case TextureFormat::RGBA16I:
+        case TextureFormat::RGBA8I:
+        case TextureFormat::R32I:
+        case TextureFormat::RGBA8:
+        case TextureFormat::RGBA8_SNORM:
+            return true;
+
+        // Additional formats supported in Desktop OpenGL 4.2+ (Table 8.26).
+        case TextureFormat::RG32F:
+        case TextureFormat::RG16F:
+        case TextureFormat::R11F_G11F_B10F:
+        case TextureFormat::R16F:
+        case TextureFormat::RG32UI:
+        case TextureFormat::RG16UI:
+        case TextureFormat::RG8UI:
+        case TextureFormat::R16UI:
+        case TextureFormat::R8UI:
+        case TextureFormat::RG32I:
+        case TextureFormat::RG16I:
+        case TextureFormat::RG8I:
+        case TextureFormat::R16I:
+        case TextureFormat::R8I:
+        case TextureFormat::RGB10_A2:
+        case TextureFormat::RG8:
+        case TextureFormat::R8:
+        case TextureFormat::RG8_SNORM:
+        case TextureFormat::R8_SNORM:
+            return mContext.isAtLeastGL<4, 2>();
+
+        default:
+            return false;
+    }
+#endif
+}
+
 bool OpenGLDriver::isTextureSwizzleSupported() {
 #if defined(__EMSCRIPTEN__)
     // WebGL2 doesn't support texture swizzle

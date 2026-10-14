@@ -1799,6 +1799,12 @@ TEST(FilamentTest, BufferObjectReadBufferTest) {
     Engine::destroy(&engine);
 }
 
+TEST(FilamentTest, IsImageFormatSupportedTest) {
+    Engine* engine = Engine::create(Engine::Backend::NOOP);
+    EXPECT_TRUE(Texture::isImageFormatSupported(*engine, Texture::InternalFormat::RGBA8));
+    Engine::destroy(&engine);
+}
+
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

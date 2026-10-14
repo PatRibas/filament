@@ -64,6 +64,14 @@ Java_com_google_android_filament_Texture_nIsTextureFormatSupported(JNIEnv*, jcla
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_google_android_filament_Texture_nIsImageFormatSupported(JNIEnv*, jclass,
+        jlong nativeEngine, jint internalFormat) {
+    Engine *engine = (Engine *) nativeEngine;
+    return (jboolean) Texture::isImageFormatSupported(*engine,
+            (Texture::InternalFormat) internalFormat);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_google_android_filament_Texture_nIsTextureFormatMipmappable(JNIEnv*, jclass,
         jlong nativeEngine, jint internalFormat) {
     Engine *engine = (Engine *) nativeEngine;

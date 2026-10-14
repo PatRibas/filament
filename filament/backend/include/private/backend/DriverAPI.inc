@@ -403,6 +403,7 @@ DECL_DRIVER_API_SYNCHRONOUS_N(void, fenceCancel, backend::FenceHandle, fh)
 DECL_DRIVER_API_SYNCHRONOUS_N(void, getPlatformSync, backend::SyncHandle, sh,
         backend::CallbackHandler*, handler, backend::Platform::SyncCallback, cb, void*, userData)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, isTextureFormatSupported, backend::TextureFormat, format)
+DECL_DRIVER_API_SYNCHRONOUS_N(bool, isImageFormatSupported, backend::TextureFormat, format)
 DECL_DRIVER_API_SYNCHRONOUS_0(bool, isTextureSwizzleSupported)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, isTextureFormatMipmappable, backend::TextureFormat, format)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, isTextureFormatFilterable, backend::TextureFormat, format)

@@ -1371,6 +1371,52 @@ bool MetalDriver::isTextureFormatSupported(TextureFormat format) {
     return MetalTexture::decidePixelFormat(mContext, format) != MTLPixelFormatInvalid;
 }
 
+bool MetalDriver::isImageFormatSupported(TextureFormat format) {
+    // Derived from the Metal 3.0 Feature Set Tables ("Write" capability).
+    MTLPixelFormat const metalFormat = getMetalFormat(mContext, format);
+    switch (metalFormat) {
+        case MTLPixelFormatR8Unorm:
+        case MTLPixelFormatR8Snorm:
+        case MTLPixelFormatR8Uint:
+        case MTLPixelFormatR8Sint:
+        case MTLPixelFormatR16Uint:
+        case MTLPixelFormatR16Sint:
+        case MTLPixelFormatR16Float:
+        case MTLPixelFormatRG8Unorm:
+        case MTLPixelFormatRG8Snorm:
+        case MTLPixelFormatRG8Uint:
+        case MTLPixelFormatRG8Sint:
+        case MTLPixelFormatR32Uint:
+        case MTLPixelFormatR32Sint:
+        case MTLPixelFormatR32Float:
+        case MTLPixelFormatRG16Uint:
+        case MTLPixelFormatRG16Sint:
+        case MTLPixelFormatRG16Float:
+        case MTLPixelFormatRGBA8Unorm:
+        case MTLPixelFormatRGBA8Snorm:
+        case MTLPixelFormatRGBA8Uint:
+        case MTLPixelFormatRGBA8Sint:
+        case MTLPixelFormatRG32Uint:
+        case MTLPixelFormatRG32Sint:
+        case MTLPixelFormatRG32Float:
+        case MTLPixelFormatRGBA16Uint:
+        case MTLPixelFormatRGBA16Sint:
+        case MTLPixelFormatRGBA16Float:
+        case MTLPixelFormatRGBA32Uint:
+        case MTLPixelFormatRGBA32Sint:
+        case MTLPixelFormatRGBA32Float:
+            return true;
+
+        case MTLPixelFormatRGB10A2Unorm:
+        case MTLPixelFormatRG11B10Float:
+            return mContext->highestSupportedGpuFamily.apple >= 3 ||
+                   mContext->highestSupportedGpuFamily.mac >= 2;
+
+        default:
+            return false;
+    }
+}
+
 bool MetalDriver::isTextureSwizzleSupported() {
     return mContext->supportsTextureSwizzling;
 }
