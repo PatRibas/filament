@@ -60,6 +60,7 @@ using utils::EntityManager;
 namespace {
 
 constexpr uint32_t DEFAULT_PARTICLE_COUNT = 10485760;
+constexpr uint32_t DEFAULT_GROUP_SIZE = 64;
 
 static const short4 QUAD_TBN = packSnorm16(
         mat3f::packTangentFrame(
@@ -157,6 +158,8 @@ static void printUsage(char* name) {
                       "       Prints this message\n\n"
                       "   --count, -c\n"
                       "       Number of particles to render (default: 10485760)\n\n"
+                      "   --group-size, -g\n"
+                      "       Compute workgroup size X (default: 64)\n\n"
                       "API_USAGE");
     const std::string from("EXEC_NAME");
     for (size_t pos = usage.find(from); pos != std::string::npos;
@@ -180,12 +183,14 @@ int main(int argc, char** argv) {
     config.iblDirectory = FilamentApp::getRootAssetsPath() + "assets/ibl/lightroom_14b";
 
     uint32_t particleCount = DEFAULT_PARTICLE_COUNT;
+    uint32_t groupSizeX = DEFAULT_GROUP_SIZE;
 
-    static constexpr const char* OPTSTR = "ha:c:";
+    static constexpr const char* OPTSTR = "ha:c:g:";
     static const utils::getopt::option OPTIONS[] = {
         { "help", utils::getopt::no_argument, nullptr, 'h' },
         { "api", utils::getopt::required_argument, nullptr, 'a' },
         { "count", utils::getopt::required_argument, nullptr, 'c' },
+        { "group-size", utils::getopt::required_argument, nullptr, 'g' },
         { nullptr, 0, nullptr, 0 }
     };
 
@@ -210,11 +215,20 @@ int main(int argc, char** argv) {
                 particleCount = static_cast<uint32_t>(val);
                 break;
             }
+            case 'g': {
+                long long const val = std::atoll(arg.c_str());
+                if (val <= 0) {
+                    std::cerr << "Invalid group size: " << arg << std::endl;
+                    exit(1);
+                }
+                groupSizeX = static_cast<uint32_t>(val);
+                break;
+            }
         }
     }
 
     App app;
-    auto setup = [&app, particleCount](Engine* engine, View* view, Scene* scene) {
+    auto setup = [&app, particleCount, groupSizeX](Engine* engine, View* view, Scene* scene) {
         app.initialData = createInitialParticles(particleCount);
         size_t const bufferSize = particleCount * sizeof(float4);
 
@@ -244,6 +258,7 @@ int main(int argc, char** argv) {
 
         app.computeMaterial = Material::Builder()
                 .package(RESOURCES_COMPUTEPARTICLES_DATA, RESOURCES_COMPUTEPARTICLES_SIZE)
+                .groupSize({ groupSizeX, 1, 1 })
                 .build(*engine);
 
         math::uint3 const groupSize = app.computeMaterial->getGroupSize();

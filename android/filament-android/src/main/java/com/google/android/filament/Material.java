@@ -413,6 +413,9 @@ public class Material {
         private int mShBandCount = 0;
         private ShadowSamplingQuality mShadowSamplingQuality = ShadowSamplingQuality.LOW;
         private UboBatchingMode mUboBatchingMode = UboBatchingMode.DEFAULT;
+        private int mGroupSizeX = 0;
+        private int mGroupSizeY = 0;
+        private int mGroupSizeZ = 0;
 
 
         /**
@@ -469,6 +472,26 @@ public class Material {
         }
 
         /**
+         * Overrides the workgroup size of this material. This is only taken into account
+         * if this material is in the compute domain. Each component must be >= 1.
+         *
+         * @param x The x dimension of the workgroup size.
+         * @param y The y dimension of the workgroup size.
+         * @param z The z dimension of the workgroup size.
+         * @return Reference to this Builder for chaining calls.
+         */
+        @NonNull
+        public Builder groupSize(
+                @IntRange(from = 1) int x,
+                @IntRange(from = 1) int y,
+                @IntRange(from = 1) int z) {
+            mGroupSizeX = x;
+            mGroupSizeY = y;
+            mGroupSizeZ = z;
+            return this;
+        }
+
+        /**
          * Creates and returns the Material object.
          *
          * @param engine reference to the Engine instance to associate this Material with
@@ -481,7 +504,8 @@ public class Material {
         @NonNull
         public Material build(@NonNull Engine engine) {
             long nativeMaterial = nBuilderBuild(engine.getNativeObject(),
-                mBuffer, mSize, mShBandCount, mShadowSamplingQuality.ordinal(), mUboBatchingMode.ordinal());
+                mBuffer, mSize, mShBandCount, mShadowSamplingQuality.ordinal(),
+                mUboBatchingMode.ordinal(), mGroupSizeX, mGroupSizeY, mGroupSizeZ);
             if (nativeMaterial == 0) throw new IllegalStateException("Couldn't create Material");
             return new Material(nativeMaterial);
         }
@@ -1191,7 +1215,9 @@ public class Material {
         mNativeObject = 0;
     }
 
-    private static native long nBuilderBuild(long nativeEngine, @NonNull Buffer buffer, int size, int shBandCount, int shadowQuality, int uboBatchingMode);
+    private static native long nBuilderBuild(long nativeEngine, @NonNull Buffer buffer, int size,
+            int shBandCount, int shadowQuality, int uboBatchingMode,
+            int groupSizeX, int groupSizeY, int groupSizeZ);
     private static native long nCreateInstance(long nativeMaterial);
     private static native long nCreateInstanceWithName(long nativeMaterial, @NonNull String name);
     private static native long nGetDefaultInstance(long nativeMaterial);

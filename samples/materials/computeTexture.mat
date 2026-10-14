@@ -1,7 +1,6 @@
 material {
     name : ComputeTexture,
     domain : compute,
-    groupSize : [8, 8, 1],
     parameters : [
         {
             type : float,

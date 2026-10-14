@@ -586,6 +586,14 @@ void MaterialDefinition::processSpecializationConstants(FEngine& engine) {
     specializationConstants[+ReservedSpecializationConstants::CONFIG_FROXEL_RECORD_BUFFER_HEIGHT] =
             int(Froxelizer::getFroxelRecordBufferByteCount(driver) / 16u);
 
+    // Overridden per-Material in FMaterial::processSpecializationConstants.
+    specializationConstants[+ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_X] =
+            int(groupSize.x);
+    specializationConstants[+ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Y] =
+            int(groupSize.y);
+    specializationConstants[+ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Z] =
+            int(groupSize.z);
+
     specializationConstants[CONFIG_MAX_RESERVED_SPEC_CONSTANTS +
                             +DynamicSpecializationConstants::RUNTIME_CONFIG_HAS_DYNAMIC_LIGHTING] =
             isVariantLit || hasShadowMultiplier;

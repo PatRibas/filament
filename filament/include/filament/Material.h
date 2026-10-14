@@ -194,6 +194,14 @@ public:
         Builder& uboBatching(UboBatchingMode uboBatchingMode) noexcept;
 
         /**
+         * Overrides the workgroup size of this material. This is only taken into account
+         * if this material is in the compute domain. Each component must be >= 1.
+         * @param groupSize The workgroup size (x, y, z) to use for this material.
+         * @return Reference to this Builder for chaining calls.
+         */
+        Builder& groupSize(math::uint3 groupSize) noexcept;
+
+        /**
          * Creates the Material object and returns a pointer to it.
          *
          * @param engine Reference to the filament::Engine to associate this Material with.

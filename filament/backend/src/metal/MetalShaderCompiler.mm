@@ -116,14 +116,30 @@ static MTLSize parseWorkGroupSize(const char* source, size_t length) noexcept {
             std::sscanf(source + pos, "%u, %u, %u", &x, &y, &z) == 3) {
         return MTLSizeMake(std::max(1u, x), std::max(1u, y), std::max(1u, z));
     }
-    return MTLSizeMake(1u, 1u, 1u);
+    auto const parseFuncConstDefault = [&](std::string_view const marker, unsigned int& outVal) {
+        size_t const mpos = view.find(marker);
+        if (mpos != std::string_view::npos) {
+            std::sscanf(source + mpos + marker.size(), "%u", &outVal);
+        }
+    };
+    parseFuncConstDefault("_12_tmp : ", x);
+    parseFuncConstDefault("_13_tmp : ", y);
+    parseFuncConstDefault("_14_tmp : ", z);
+    return MTLSizeMake(std::max(1u, x), std::max(1u, y), std::max(1u, z));
 }
 
 /* static */ MetalShaderCompiler::MetalFunctionBundle MetalShaderCompiler::compileProgram(
         const Program& program, id<MTLDevice> device) {
+    // Must match ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_{X,Y,Z} in
+    // EngineEnums.h.
+    constexpr size_t CONFIG_COMPUTE_GROUP_SIZE_X = 12;
+    constexpr size_t CONFIG_COMPUTE_GROUP_SIZE_Y = 13;
+    constexpr size_t CONFIG_COMPUTE_GROUP_SIZE_Z = 14;
+
     std::array<id<MTLFunction>, Program::SHADER_TYPE_COUNT> functions = { nil };
     MTLSize computeThreadsPerThreadgroup = MTLSizeMake(1u, 1u, 1u);
     const auto& sources = program.getShadersSource();
+    auto const& specializationConstants = program.getSpecializationConstants();
     for (size_t i = 0; i < Program::SHADER_TYPE_COUNT; i++) {
         const auto& source = sources[i];
         // It's okay for some shaders to be empty, they shouldn't be used in any draw calls.
@@ -143,6 +159,20 @@ static MTLSize parseWorkGroupSize(const char* source, size_t length) noexcept {
                 if (static_cast<ShaderStage>(i) == ShaderStage::COMPUTE) {
                     computeThreadsPerThreadgroup = parseWorkGroupSize(
                             reinterpret_cast<const char*>(source.data()), source.size() - 1);
+                    if (specializationConstants.size() > CONFIG_COMPUTE_GROUP_SIZE_Z) {
+                        int32_t const gx = std::get<int32_t>(
+                                specializationConstants[CONFIG_COMPUTE_GROUP_SIZE_X]);
+                        int32_t const gy = std::get<int32_t>(
+                                specializationConstants[CONFIG_COMPUTE_GROUP_SIZE_Y]);
+                        int32_t const gz = std::get<int32_t>(
+                                specializationConstants[CONFIG_COMPUTE_GROUP_SIZE_Z]);
+                        if (gx > 0 && gy > 0 && gz > 0) {
+                            computeThreadsPerThreadgroup = MTLSizeMake(
+                                    static_cast<NSUInteger>(gx),
+                                    static_cast<NSUInteger>(gy),
+                                    static_cast<NSUInteger>(gz));
+                        }
+                    }
                 }
                 // the shader string is null terminated and the length includes the null character
                 NSString* objcSource = [[NSString alloc] initWithBytes:source.data()
@@ -180,15 +210,18 @@ static MTLSize parseWorkGroupSize(const char* source, size_t length) noexcept {
         }
 
         MTLFunctionConstantValues* constants = [MTLFunctionConstantValues new];
-        auto const& specializationConstants = program.getSpecializationConstants();
-        for (size_t i = 0; i < specializationConstants.size(); i++) {
-            auto const& sc = specializationConstants[i];
+        for (size_t scIndex = 0; scIndex < specializationConstants.size(); scIndex++) {
+            auto const& sc = specializationConstants[scIndex];
+            bool const isWorkgroupSizeConst = scIndex >= CONFIG_COMPUTE_GROUP_SIZE_X &&
+                    scIndex <= CONFIG_COMPUTE_GROUP_SIZE_Z;
             const std::array<MTLDataType, 3> types{
-                    MTLDataTypeInt, MTLDataTypeFloat, MTLDataTypeBool };
-            std::visit([i, constants, type = types[sc.index()]](auto&& arg) {
+                    isWorkgroupSizeConst ? MTLDataTypeUInt : MTLDataTypeInt,
+                    MTLDataTypeFloat,
+                    MTLDataTypeBool };
+            std::visit([scIndex, constants, type = types[sc.index()]](auto&& arg) {
                 [constants setConstantValue:&arg
                                        type:type
-                                    atIndex:i];
+                                    atIndex:scIndex];
             }, sc);
         }
 

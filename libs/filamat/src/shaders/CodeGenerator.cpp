@@ -155,10 +155,44 @@ utils::io::sstream& CodeGenerator::generateCommonProlog(utils::io::sstream& out,
     }
 
     if (stage == ShaderStage::COMPUTE) {
-        out << "layout(local_size_x = " << material.groupSize.x
-            << ", local_size_y = " <<  material.groupSize.y
-            << ", local_size_z = " <<  material.groupSize.z
-            << ") in;\n\n";
+        if (mTargetLanguage == MaterialBuilderBase::TargetLanguage::SPIRV) {
+            out << "layout(local_size_x = " << material.groupSize.x
+                << ", local_size_y = " << material.groupSize.y
+                << ", local_size_z = " << material.groupSize.z
+                << ", local_size_x_id = "
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_X
+                << ", local_size_y_id = "
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Y
+                << ", local_size_z_id = "
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Z
+                << ") in;\n\n";
+        } else {
+            out << "#ifndef SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_X << '\n'
+                << "#define SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_X << ' '
+                << material.groupSize.x << "u\n"
+                << "#endif\n"
+                << "#ifndef SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Y << '\n'
+                << "#define SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Y << ' '
+                << material.groupSize.y << "u\n"
+                << "#endif\n"
+                << "#ifndef SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Z << '\n'
+                << "#define SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Z << ' '
+                << material.groupSize.z << "u\n"
+                << "#endif\n"
+                << "layout(local_size_x = SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_X
+                << ", local_size_y = SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Y
+                << ", local_size_z = SPIRV_CROSS_CONSTANT_ID_"
+                << +ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Z
+                << ") in;\n\n";
+        }
     }
 
     switch (mShaderModel) {

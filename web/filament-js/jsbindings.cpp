@@ -578,11 +578,16 @@ class_<Engine>("Engine")
             (Engine* engine, utils::Entity camera) { engine->destroyCameraComponent(camera); },
             allow_raw_pointers())
 
-    .function("_createMaterial", EMBIND_LAMBDA(Material*, (Engine* engine, BufferDescriptor mbd, Material::UboBatchingMode uboBatching), {
-        return Material::Builder()
+    .function("_createMaterial", EMBIND_LAMBDA(Material*, (Engine* engine, BufferDescriptor mbd,
+            Material::UboBatchingMode uboBatching,
+            uint32_t groupSizeX, uint32_t groupSizeY, uint32_t groupSizeZ), {
+        auto builder = Material::Builder()
                 .package(mbd.bd->buffer, mbd.bd->size)
-                .uboBatching(uboBatching)
-                .build(*engine);
+                .uboBatching(uboBatching);
+        if (groupSizeX > 0 && groupSizeY > 0 && groupSizeZ > 0) {
+            builder.groupSize({ groupSizeX, groupSizeY, groupSizeZ });
+        }
+        return builder.build(*engine);
     }), allow_raw_pointers())
     /// destroyMaterial ::method::
     /// material ::argument:: an instance of [Material]

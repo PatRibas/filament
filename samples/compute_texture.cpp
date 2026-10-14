@@ -87,6 +87,7 @@ int main(int argc, char** argv) {
         app.computeMaterial =
                 Material::Builder()
                         .package(RESOURCES_COMPUTETEXTURE_DATA, RESOURCES_COMPUTETEXTURE_SIZE)
+                        .groupSize({ 8, 8, 1 })
                         .build(*engine);
         math::uint3 const groupSize = app.computeMaterial->getGroupSize();
         app.groupCount = { (TEXTURE_SIZE + groupSize.x - 1) / groupSize.x,

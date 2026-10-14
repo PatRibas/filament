@@ -50,6 +50,8 @@
 #include <utils/Invocable.h>
 #include <utils/Mutex.h>
 
+#include <math/vec3.h>
+
 #include <string_view>
 
 #include <stddef.h>
@@ -164,7 +166,7 @@ public:
     BlendingMode getBlendingMode() const noexcept { return mDefinition.blendingMode; }
     VertexDomain getVertexDomain() const noexcept { return mDefinition.vertexDomain; }
     MaterialDomain getMaterialDomain() const noexcept { return mDefinition.materialDomain; }
-    math::uint3 getGroupSize() const noexcept { return mDefinition.groupSize; }
+    math::uint3 getGroupSize() const noexcept { return mGroupSize; }
     CullingMode getCullingMode() const noexcept { return mDefinition.cullingMode; }
     TransparencyMode getTransparencyMode() const noexcept { return mDefinition.transparencyMode; }
     bool isColorWriteEnabled() const noexcept { return mDefinition.rasterState.colorWrite; }
@@ -294,6 +296,8 @@ private:
         utils::Invocable<void(Material*)>&& callback) noexcept;
 
     MaterialDefinition const& mDefinition;
+
+    math::uint3 mGroupSize = { 1, 1, 1 };
 
     bool mIsDefaultMaterial = false;
 

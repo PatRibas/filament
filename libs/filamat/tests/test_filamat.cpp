@@ -1549,6 +1549,48 @@ TEST_F(MaterialCompiler, ComputeMaterialImageTypes2DArray3DCube) {
     EXPECT_TRUE(result.isValid());
 }
 
+TEST_F(MaterialCompiler, ComputeMaterialGroupSizeSpecializationConstants) {
+    const std::string computeCode(R"(
+        void compute() {
+            uint idx = gl_GlobalInvocationID.x;
+        }
+    )");
+
+    MaterialBuilder builder;
+    builder.name("ComputeGroupSizeSpecConst");
+    builder.materialDomain(MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.groupSize({ 64, 4, 2 });
+    builder.material(computeCode.c_str());
+
+    MaterialBuilder::PropertyList allProperties{ false };
+    std::string const glslSpirv = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::VULKAN,
+            MaterialBuilder::TargetLanguage::SPIRV,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glslSpirv.find("layout(local_size_x = 64, local_size_y = 4, local_size_z = 2, "
+            "local_size_x_id = 12, local_size_y_id = 13, local_size_z_id = 14) in;"),
+            std::string::npos);
+
+    std::string const glslOpenGL = builder.peek(ShaderStage::COMPUTE, {
+            ShaderModel::DESKTOP,
+            MaterialBuilder::TargetApi::OPENGL,
+            MaterialBuilder::TargetLanguage::GLSL,
+            FeatureLevel::FEATURE_LEVEL_3,
+    }, allProperties);
+    EXPECT_NE(glslOpenGL.find("#define SPIRV_CROSS_CONSTANT_ID_12 64u"), std::string::npos);
+    EXPECT_NE(glslOpenGL.find("#define SPIRV_CROSS_CONSTANT_ID_13 4u"), std::string::npos);
+    EXPECT_NE(glslOpenGL.find("#define SPIRV_CROSS_CONSTANT_ID_14 2u"), std::string::npos);
+    EXPECT_NE(glslOpenGL.find("layout(local_size_x = SPIRV_CROSS_CONSTANT_ID_12, "
+            "local_size_y = SPIRV_CROSS_CONSTANT_ID_13, "
+            "local_size_z = SPIRV_CROSS_CONSTANT_ID_14) in;"),
+            std::string::npos);
+
+    const Package result = builder.build(*jobSystem);
+    EXPECT_TRUE(result.isValid());
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     const int rv = RUN_ALL_TESTS();

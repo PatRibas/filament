@@ -85,6 +85,9 @@ enum class ReservedSpecializationConstants : uint8_t {
     CONFIG_SH_BANDS_COUNT = 9,
     CONFIG_SHADOW_SAMPLING_METHOD = 10,
     CONFIG_FROXEL_RECORD_BUFFER_HEIGHT = 11,
+    CONFIG_COMPUTE_GROUP_SIZE_X = 12,
+    CONFIG_COMPUTE_GROUP_SIZE_Y = 13,
+    CONFIG_COMPUTE_GROUP_SIZE_Z = 14,
     // check CONFIG_NEXT_RESERVED_SPEC_CONSTANT and CONFIG_MAX_RESERVED_SPEC_CONSTANTS below
 };
 
@@ -123,7 +126,7 @@ static_assert(CONFIG_MAX_DYNAMIC_SPEC_CONSTANTS + CONFIG_MAX_RESERVED_SPEC_CONST
        CONFIG_MAX_INTERNAL_SPEC_CONSTANTS, "Inconsistent specialization constant counts");
 
 // The number of the next unassigned reserved spec constant.
-constexpr size_t CONFIG_NEXT_RESERVED_SPEC_CONSTANT = 12;
+constexpr size_t CONFIG_NEXT_RESERVED_SPEC_CONSTANT = 15;
 
 // The number of the next unassigned dynamic spec constant.
 constexpr size_t CONFIG_NEXT_DYNAMIC_SPEC_CONSTANT = CONFIG_MAX_RESERVED_SPEC_CONSTANTS + 1;

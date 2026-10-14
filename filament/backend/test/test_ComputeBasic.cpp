@@ -284,3 +284,71 @@ void main() {
         }
     }
 }
+
+TEST_F(ComputeTest, dispatchesComputeWithSpecializedGroupSize) {
+    auto& driver = getDriverApi();
+    constexpr uint32_t SPECIALIZED_GROUP_SIZE_X = 16;
+    constexpr uint32_t ELEMENT_COUNT = SPECIALIZED_GROUP_SIZE_X;
+    constexpr uint32_t BUFFER_SIZE = ELEMENT_COUNT * sizeof(float);
+
+    std::vector<float> input(ELEMENT_COUNT, 2.0f);
+    std::vector<float> readback(ELEMENT_COUNT, 0.0f);
+    BufferObjectHandle const output = driver.createBufferObject(BUFFER_SIZE,
+            BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
+    BufferObjectHandle const inputBuffer = driver.createBufferObject(BUFFER_SIZE,
+            BufferObjectBinding::SHADER_STORAGE, BufferUsage::STATIC);
+    driver.updateBufferObject(inputBuffer, { input.data(), BUFFER_SIZE }, 0);
+
+    DescriptorSetLayout const set0Layout = createStorageBufferLayout();
+    DescriptorSetLayoutHandle const layout =
+            driver.createDescriptorSetLayout(createStorageBufferLayout());
+    DescriptorSetHandle const descriptorSet = driver.createDescriptorSet(layout);
+    driver.updateDescriptorSetBuffer(descriptorSet, 0, output, 0, BUFFER_SIZE);
+    driver.updateDescriptorSetBuffer(descriptorSet, 1, inputBuffer, 0, BUFFER_SIZE);
+    driver.bindDescriptorSet(descriptorSet, 0, {});
+
+    Program program = createComputeProgram(R"(
+#version 450
+layout(local_size_x = 4, local_size_y = 1, local_size_z = 1,
+       local_size_x_id = 12, local_size_y_id = 13, local_size_z_id = 14) in;
+layout(set = 0, binding = 0, std430) writeonly buffer Output { float elements[]; } outputData;
+layout(set = 0, binding = 1, std430) readonly buffer Input { float elements[]; } inputData;
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    outputData.elements[index] = inputData.elements[index] * float(gl_WorkGroupSize.x);
+}
+)", getBackend(), isMobile(), set0Layout);
+    program.descriptorLayout(0, createStorageBufferLayout());
+
+    utils::FixedCapacityVector<Program::SpecializationConstant> specConstants(15);
+    for (size_t i = 0; i < 15; i++) {
+        specConstants[i] = int32_t(0);
+    }
+    specConstants[12] = int32_t(SPECIALIZED_GROUP_SIZE_X);
+    specConstants[13] = int32_t(1);
+    specConstants[14] = int32_t(1);
+    program.specializationConstants(std::move(specConstants));
+
+    ProgramHandle const computeProgram = driver.createProgram(std::move(program));
+
+    driver.dispatchCompute(computeProgram, { 1, 1, 1 });
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL ||
+            getBackend() == Backend::VULKAN) {
+        driver.readBufferSubData(output, 0, BUFFER_SIZE, { readback.data(), BUFFER_SIZE });
+    }
+    driver.destroyProgram(computeProgram);
+    driver.destroyDescriptorSet(descriptorSet);
+    driver.destroyDescriptorSetLayout(layout);
+    driver.destroyBufferObject(inputBuffer);
+    driver.destroyBufferObject(output);
+    driver.finish();
+
+    executeCommands();
+
+    if (getBackend() == Backend::METAL || getBackend() == Backend::OPENGL ||
+            getBackend() == Backend::VULKAN) {
+        for (uint32_t i = 0; i < ELEMENT_COUNT; i++) {
+            EXPECT_FLOAT_EQ(readback[i], 32.0f);
+        }
+    }
+}

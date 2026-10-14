@@ -348,3 +348,43 @@ TEST(Material, CompileUnlitMaterialShadowMultiplierWithShadowReceiverEnabled) {
     engine->destroy(material);
     Engine::destroy(engine);
 }
+
+TEST(Material, ComputeGroupSizeDefaultAndOverride) {
+    Engine* engine = Engine::create(Engine::Backend::NOOP);
+    ASSERT_NE(engine, nullptr);
+
+    std::string const computeCode(R"(
+        void compute() {
+            uint idx = gl_GlobalInvocationID.x;
+        }
+    )");
+
+    filamat::MaterialBuilder builder;
+    builder.init();
+    builder.name("ComputeGroupSizeTest");
+    builder.materialDomain(filamat::MaterialBuilder::MaterialDomain::COMPUTE);
+    builder.featureLevel(backend::FeatureLevel::FEATURE_LEVEL_3);
+    builder.groupSize({ 64, 1, 1 });
+    builder.material(computeCode.c_str());
+
+    filamat::Package result = builder.build(engine->getJobSystem());
+    ASSERT_TRUE(result.isValid());
+
+    Material* defaultMaterial = Material::Builder()
+            .package(result.getData(), result.getSize())
+            .build(*engine);
+    ASSERT_NE(defaultMaterial, nullptr);
+    EXPECT_EQ(defaultMaterial->getGroupSize(), (math::uint3{ 64, 1, 1 }));
+
+    Material* overriddenMaterial = Material::Builder()
+            .package(result.getData(), result.getSize())
+            .groupSize({ 128, 4, 2 })
+            .build(*engine);
+    ASSERT_NE(overriddenMaterial, nullptr);
+    EXPECT_EQ(overriddenMaterial->getGroupSize(), (math::uint3{ 128, 4, 2 }));
+    EXPECT_EQ(defaultMaterial->getGroupSize(), (math::uint3{ 64, 1, 1 }));
+
+    engine->destroy(overriddenMaterial);
+    engine->destroy(defaultMaterial);
+    Engine::destroy(engine);
+}

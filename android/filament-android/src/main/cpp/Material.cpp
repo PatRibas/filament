@@ -29,7 +29,8 @@ using namespace filament::android;
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_google_android_filament_Material_nBuilderBuild(JNIEnv *env, jclass,
-        jlong nativeEngine, jobject buffer_, jint size, jint shBandCount, jint shadowQuality, jint uboBatchingMode) {
+        jlong nativeEngine, jobject buffer_, jint size, jint shBandCount, jint shadowQuality,
+        jint uboBatchingMode, jint groupSizeX, jint groupSizeY, jint groupSizeZ) {
     Engine* engine = (Engine*) nativeEngine;
     return wrapJni<jlong>(env, [=]() {
         AutoBuffer buffer(env, buffer_, size);
@@ -39,6 +40,12 @@ Java_com_google_android_filament_Material_nBuilderBuild(JNIEnv *env, jclass,
         }
         builder.shadowSamplingQuality((Material::Builder::ShadowSamplingQuality)shadowQuality);
         builder.uboBatching((Material::UboBatchingMode)uboBatchingMode);
+        if (groupSizeX > 0 && groupSizeY > 0 && groupSizeZ > 0) {
+            builder.groupSize({
+                    uint32_t(groupSizeX),
+                    uint32_t(groupSizeY),
+                    uint32_t(groupSizeZ) });
+        }
         Material* material = builder
                 .package(buffer.getData(), buffer.getSize())
                 .build(*engine);

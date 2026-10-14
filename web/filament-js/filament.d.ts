@@ -705,7 +705,7 @@ export class Engine {
     public static destroy(engine: Engine): void;
     public execute(): void;
     public createCamera(entity: Entity): Camera;
-    public createMaterial(urlOrBuffer: BufferReference, options?: { uboBatching?: Material$UboBatchingMode }): Material;
+    public createMaterial(urlOrBuffer: BufferReference, options?: { uboBatching?: Material$UboBatchingMode, groupSize?: uint3 }): Material;
     public createRenderer(): Renderer;
     public createScene(): Scene;
     public createSwapChain(): SwapChain;

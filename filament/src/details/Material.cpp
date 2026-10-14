@@ -58,9 +58,12 @@
 #include <utils/ostream.h>
 #include <utils/Panic.h>
 
+#include <math/vec3.h>
+
 #include <algorithm>
 #include <array>
 #include <new>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -92,6 +95,7 @@ struct Material::BuilderDetails {
     int32_t mShBandsCount = 3;
     Builder::ShadowSamplingQuality mShadowSamplingQuality = Builder::ShadowSamplingQuality::LOW;
     UboBatchingMode mUboBatchingMode = UboBatchingMode::DEFAULT;
+    std::optional<math::uint3> mGroupSize;
     std::unordered_map<
         CString,
         std::variant<int32_t, float, bool>> mConstantSpecializations;
@@ -130,6 +134,11 @@ Material::Builder& Material::Builder::uboBatching(UboBatchingMode const mode) no
     return *this;
 }
 
+Material::Builder& Material::Builder::groupSize(math::uint3 const groupSize) noexcept {
+    mImpl->mGroupSize = groupSize;
+    return *this;
+}
+
 template<typename T, typename>
 Material::Builder& Material::Builder::constant(const char* name, size_t nameLength, T value) {
     FILAMENT_CHECK_PRECONDITION(name != nullptr) << "name cannot be null";
@@ -162,11 +171,15 @@ Material* Material::Builder::build(Engine& engine) const {
 
 FMaterial::FMaterial(FEngine& engine, const Builder& builder, MaterialDefinition const& definition)
         : mDefinition(definition),
+          mGroupSize(builder->mGroupSize.value_or(definition.groupSize)),
           mIsDefaultMaterial(builder->mDefaultMaterial),
           mUseUboBatching(shouldEnableBatching(engine, builder->mUboBatchingMode,
                   definition.materialDomain)),
           mEngine(engine),
           mMaterialId(engine.getMaterialId()) {
+
+    FILAMENT_CHECK_PRECONDITION(mGroupSize.x >= 1 && mGroupSize.y >= 1 && mGroupSize.z >= 1)
+            << "Compute groupSize components must be >= 1.";
 
     FILAMENT_CHECK_PRECONDITION(!mUseUboBatching || engine.isUboBatchingEnabled())
             << "UBO batching is not enabled.";
@@ -499,6 +512,12 @@ FixedCapacityVector<Program::SpecializationConstant> FMaterial::processSpecializ
             builder->mShBandsCount;
     specializationConstants[+ReservedSpecializationConstants::CONFIG_SHADOW_SAMPLING_METHOD] =
             int32_t(builder->mShadowSamplingQuality);
+    specializationConstants[+ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_X] =
+            int32_t(mGroupSize.x);
+    specializationConstants[+ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Y] =
+            int32_t(mGroupSize.y);
+    specializationConstants[+ReservedSpecializationConstants::CONFIG_COMPUTE_GROUP_SIZE_Z] =
+            int32_t(mGroupSize.z);
 
     // Verify that all the constant specializations exist in the material and that their types
     // match.
